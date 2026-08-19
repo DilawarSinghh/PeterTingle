@@ -1,0 +1,15 @@
+TokenSaver
+==========
+
+This project incorporates compression prompt logic adapted from:
+
+  caveman — https://github.com/JuliusBrussee/caveman
+  Copyright (c) Julius Brussee
+  Licensed under the MIT License
+
+Specifically, the output-compression system prompt in
+`lib/compression/outputInstruction.ts` is a port of the caveman skill ruleset
+from `skills/caveman/SKILL.md` in the caveman repository.
+
+The full text of the MIT License for caveman is available at:
+https://github.com/JuliusBrussee/caveman/blob/main/LICENSE
