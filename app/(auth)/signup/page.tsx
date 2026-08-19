@@ -48,8 +48,8 @@ export default function SignupPage() {
       await supabase.from("profiles").upsert({
         id: data.user.id,
         display_name: displayName || email.split("@")[0],
-        compression_level: "full",
-      });
+        compression_level: "full" as const,
+      } as { id: string; display_name: string; compression_level: "lite" | "full" | "ultra" });
     }
 
     router.push("/chat");

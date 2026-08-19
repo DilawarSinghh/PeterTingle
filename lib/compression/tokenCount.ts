@@ -7,14 +7,15 @@
  * provider invoices.
  */
 
-import { get_encoding } from "js-tiktoken";
+import { Tiktoken } from "js-tiktoken";
+import o200k from "js-tiktoken/ranks/o200k_base";
 
 // Singleton encoder — initialising is ~50ms, so we cache it module-level.
-let _enc: ReturnType<typeof get_encoding> | null = null;
+let _enc: Tiktoken | null = null;
 
 function getEncoder() {
   if (!_enc) {
-    _enc = get_encoding("o200k_base");
+    _enc = new Tiktoken(o200k);
   }
   return _enc;
 }
