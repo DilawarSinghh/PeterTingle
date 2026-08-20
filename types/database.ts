@@ -50,6 +50,7 @@ export type Database = {
         Row: Profile;
         Insert: Omit<Profile, "created_at"> & { created_at?: string };
         Update: Partial<Omit<Profile, "id">>;
+        Relationships: [];
       };
       conversations: {
         Row: Conversation;
@@ -58,6 +59,7 @@ export type Database = {
           created_at?: string;
         };
         Update: Partial<Omit<Conversation, "id">>;
+        Relationships: [];
       };
       messages: {
         Row: Message;
@@ -66,6 +68,7 @@ export type Database = {
           created_at?: string;
         };
         Update: Partial<Omit<Message, "id">>;
+        Relationships: [];
       };
       usage_logs: {
         Row: UsageLog;
@@ -74,6 +77,7 @@ export type Database = {
           created_at?: string;
         };
         Update: Partial<Omit<UsageLog, "id">>;
+        Relationships: [];
       };
     };
     Views: Record<string, never>;

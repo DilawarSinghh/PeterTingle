@@ -20,7 +20,7 @@ export default async function DashboardPage() {
     .select("id")
     .eq("user_id", user!.id);
 
-  const convIds = (userConvs ?? []).map((c) => c.id);
+  const convIds = (userConvs ?? []).map((c: { id: string }) => c.id);
 
   const { count: messageCount } = convIds.length
     ? await supabase

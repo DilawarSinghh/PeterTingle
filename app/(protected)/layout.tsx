@@ -1,9 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Sidebar from "@/components/ui/Sidebar";
-import type { Database } from "@/types/database";
-
-type ProfileInsert = Database["public"]["Tables"]["profiles"]["Insert"];
 
 export default async function ProtectedLayout({
   children,
@@ -28,12 +25,11 @@ export default async function ProtectedLayout({
 
   // Create profile if missing (first login via OAuth)
   if (!profile) {
-    const newProfile: ProfileInsert = {
+    await supabase.from("profiles").upsert({
       id: user.id,
       display_name: user.user_metadata?.full_name ?? user.email?.split("@")[0] ?? "User",
       compression_level: "full",
-    };
-    await supabase.from("profiles").upsert(newProfile);
+    });
   }
 
   return (

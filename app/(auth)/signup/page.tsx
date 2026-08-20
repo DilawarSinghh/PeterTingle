@@ -4,9 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { Database } from "@/types/database";
-
-type ProfileInsert = Database["public"]["Tables"]["profiles"]["Insert"];
 
 export default function SignupPage() {
   const router = useRouter();
@@ -48,12 +45,11 @@ export default function SignupPage() {
 
     // Auto-confirmed — create profile and go to chat
     if (data.user) {
-      const profile: ProfileInsert = {
+      await supabase.from("profiles").upsert({
         id: data.user.id,
         display_name: displayName || email.split("@")[0],
         compression_level: "full",
-      };
-      await supabase.from("profiles").upsert(profile);
+      });
     }
 
     router.push("/chat");
