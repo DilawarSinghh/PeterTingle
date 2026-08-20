@@ -14,6 +14,7 @@ create table if not exists public.models (
 -- models is read-only for authenticated users (no RLS write needed — admin manages via migrations)
 alter table public.models enable row level security;
 
+drop policy if exists "models: anyone authenticated can read" on public.models;
 create policy "models: anyone authenticated can read"
   on public.models
   for select

@@ -1,17 +1,17 @@
--- TokenSaver — Supabase schema
--- Run this in your Supabase SQL editor (Dashboard → SQL Editor → New query)
--- Order matters: tables before RLS policies.
+-- TokenSaver — Supabase base schema
+-- Safe to re-run: uses IF NOT EXISTS for tables/indexes, DROP before CREATE for policies/triggers.
+-- Run FIRST, then run migrations 001–005 in order.
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Tables
 -- ─────────────────────────────────────────────────────────────────────────────
 
 create table if not exists public.profiles (
-  id               uuid references auth.users on delete cascade primary key,
-  display_name     text,
+  id                uuid references auth.users on delete cascade primary key,
+  display_name      text,
   compression_level text not null default 'full'
     check (compression_level in ('lite', 'full', 'ultra')),
-  created_at       timestamptz not null default now()
+  created_at        timestamptz not null default now()
 );
 
 create table if not exists public.conversations (
@@ -45,10 +45,10 @@ create table if not exists public.usage_logs (
 -- Indexes
 -- ─────────────────────────────────────────────────────────────────────────────
 
-create index if not exists conversations_user_id_idx on public.conversations (user_id);
+create index if not exists conversations_user_id_idx    on public.conversations (user_id);
 create index if not exists messages_conversation_id_idx on public.messages (conversation_id);
-create index if not exists usage_logs_user_id_idx on public.usage_logs (user_id);
-create index if not exists usage_logs_created_at_idx on public.usage_logs (created_at);
+create index if not exists usage_logs_user_id_idx       on public.usage_logs (user_id);
+create index if not exists usage_logs_created_at_idx    on public.usage_logs (created_at);
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Row Level Security
@@ -59,24 +59,27 @@ alter table public.conversations  enable row level security;
 alter table public.messages       enable row level security;
 alter table public.usage_logs     enable row level security;
 
+-- Drop policies before (re)creating — Postgres has no CREATE POLICY IF NOT EXISTS
+drop policy if exists "profiles: owner access"       on public.profiles;
+drop policy if exists "conversations: owner access"  on public.conversations;
+drop policy if exists "messages: owner access"       on public.messages;
+drop policy if exists "usage_logs: owner access"     on public.usage_logs;
+
 -- profiles: users own their row
 create policy "profiles: owner access"
-  on public.profiles
-  for all
+  on public.profiles for all
   using (auth.uid() = id)
   with check (auth.uid() = id);
 
 -- conversations: users own their rows
 create policy "conversations: owner access"
-  on public.conversations
-  for all
+  on public.conversations for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
 -- messages: accessible via conversation ownership
 create policy "messages: owner access"
-  on public.messages
-  for all
+  on public.messages for all
   using (
     exists (
       select 1 from public.conversations c
@@ -94,8 +97,7 @@ create policy "messages: owner access"
 
 -- usage_logs: users own their rows
 create policy "usage_logs: owner access"
-  on public.usage_logs
-  for all
+  on public.usage_logs for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
@@ -109,7 +111,11 @@ begin
   insert into public.profiles (id, display_name, compression_level)
   values (
     new.id,
-    coalesce(new.raw_user_meta_data->>'display_name', new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
+    coalesce(
+      new.raw_user_meta_data->>'display_name',
+      new.raw_user_meta_data->>'full_name',
+      split_part(new.email, '@', 1)
+    ),
     'full'
   )
   on conflict (id) do nothing;

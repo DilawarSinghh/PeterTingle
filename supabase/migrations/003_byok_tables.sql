@@ -16,6 +16,7 @@ create table if not exists public.user_api_keys (
 
 alter table public.user_api_keys enable row level security;
 
+drop policy if exists "users manage own keys" on public.user_api_keys;
 create policy "users manage own keys"
   on public.user_api_keys
   for all
