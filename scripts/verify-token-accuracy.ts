@@ -4,23 +4,15 @@
  * QA script: sends fixed test prompts to each active provider and compares
  * provider-reported token counts vs local tiktoken estimates.
  *
- * Purpose: confirm the local tokenizer is only used for the hypothetical
- * "original/baseline" count, and catch any code paths accidentally using
- * estimates where real provider usage should be used.
+ * Usage (from project root):
+ *   npx tsx --env-file=.env scripts/verify-token-accuracy.ts
  *
- * Usage:
- *   npx tsx scripts/verify-token-accuracy.ts
- *
- * Requires env vars: OPENAI_API_KEY, GROQ_API_KEY, NVIDIA_NIM_API_KEY
- * (set in .env.local or export before running)
+ * Requires env vars in .env: OPENAI_API_KEY, GROQ_API_KEY,
+ * NVIDIA_NIM_API_KEY, LLM_API_KEY
  */
 
 import { Tiktoken } from "js-tiktoken";
 import o200k from "js-tiktoken/ranks/o200k_base";
-
-// Load env vars from .env
-import { config } from "dotenv";
-config({ path: ".env" });
 
 // ── Test prompts ──────────────────────────────────────────────────────────────
 
@@ -32,7 +24,7 @@ const TEST_PROMPTS = [
   "The quick brown fox jumps over the lazy dog. How many words is that?",
 ];
 
-// ── Local tokenizer ────────────────────────────────────────────────────────────
+// ── Local tokenizer ───────────────────────────────────────────────────────────
 
 const enc = new Tiktoken(o200k);
 
@@ -47,7 +39,7 @@ interface ProviderConfig {
   baseUrl: string;
   model: string;
   apiKey: string | undefined;
-  headers: (key: string) => Record<string, string>;
+  buildHeaders: (key: string) => Record<string, string>;
 }
 
 const PROVIDERS: ProviderConfig[] = [
@@ -56,36 +48,39 @@ const PROVIDERS: ProviderConfig[] = [
     baseUrl: "https://api.openai.com/v1",
     model: "gpt-4o-mini",
     apiKey: process.env.OPENAI_API_KEY,
-    headers: (k) => ({ Authorization: `Bearer ${k}` }),
+    buildHeaders: (k) => ({ Authorization: `Bearer ${k}` }),
   },
   {
     name: "Groq",
     baseUrl: "https://api.groq.com/openai/v1",
     model: "llama-3.1-8b-instant",
     apiKey: process.env.GROQ_API_KEY,
-    headers: (k) => ({ Authorization: `Bearer ${k}` }),
+    buildHeaders: (k) => ({ Authorization: `Bearer ${k}` }),
   },
   {
     name: "NVIDIA NIM",
     baseUrl: "https://integrate.api.nvidia.com/v1",
     model: "meta/llama-3.1-8b-instruct",
     apiKey: process.env.NVIDIA_NIM_API_KEY,
-    headers: (k) => ({ Authorization: `Bearer ${k}` }),
+    buildHeaders: (k) => ({ Authorization: `Bearer ${k}` }),
   },
   {
     name: "OpenRouter",
     baseUrl: "https://openrouter.ai/api/v1",
     model: "mistralai/mistral-7b-instruct",
     apiKey: process.env.LLM_API_KEY,
-    headers: (k) => ({ Authorization: `Bearer ${k}`, "HTTP-Referer": "https://tokensaver.app" }),
+    buildHeaders: (k) => ({
+      Authorization: `Bearer ${k}`,
+      "HTTP-Referer": "https://tokensaver.app",
+    }),
   },
 ];
 
-// ── Run one test ───────────────────────────────────────────────────────────────
+// ── Run one test ──────────────────────────────────────────────────────────────
 
 interface TestResult {
   prompt: string;
-  localEstimate: number;
+  localEst: number;
   providerPromptTokens: number | null;
   providerCompletionTokens: number | null;
   diff: number | null;
@@ -93,30 +88,26 @@ interface TestResult {
   error?: string;
 }
 
-async function runTest(config: ProviderConfig, prompt: string): Promise<TestResult> {
-  const localEst = localEstimate(prompt);
+async function runTest(provider: ProviderConfig, prompt: string): Promise<TestResult> {
+  const est = localEstimate(prompt);
 
-  if (!config.apiKey) {
+  if (!provider.apiKey) {
     return {
-      prompt,
-      localEstimate: localEst,
-      providerPromptTokens: null,
-      providerCompletionTokens: null,
-      diff: null,
-      diffPct: null,
-      error: "No API key",
+      prompt, localEst: est,
+      providerPromptTokens: null, providerCompletionTokens: null,
+      diff: null, diffPct: null, error: "No API key",
     };
   }
 
   try {
-    const res = await fetch(`${config.baseUrl}/chat/completions`, {
+    const res = await fetch(`${provider.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...config.headers(config.apiKey),
+        ...provider.buildHeaders(provider.apiKey),
       },
       body: JSON.stringify({
-        model: config.model,
+        model: provider.model,
         messages: [{ role: "user", content: prompt }],
         max_tokens: 50,
         stream: false,
@@ -127,59 +118,45 @@ async function runTest(config: ProviderConfig, prompt: string): Promise<TestResu
     if (!res.ok) {
       const text = await res.text();
       return {
-        prompt,
-        localEstimate: localEst,
-        providerPromptTokens: null,
-        providerCompletionTokens: null,
-        diff: null,
-        diffPct: null,
-        error: `HTTP ${res.status}: ${text.slice(0, 100)}`,
+        prompt, localEst: est,
+        providerPromptTokens: null, providerCompletionTokens: null,
+        diff: null, diffPct: null,
+        error: `HTTP ${res.status}: ${text.slice(0, 120)}`,
       };
     }
 
     const data = await res.json();
-    const providerPrompt = data.usage?.prompt_tokens ?? null;
-    const providerCompletion = data.usage?.completion_tokens ?? null;
-    const diff = providerPrompt !== null ? providerPrompt - localEst : null;
+    const providerPrompt: number | null = data.usage?.prompt_tokens ?? null;
+    const providerCompletion: number | null = data.usage?.completion_tokens ?? null;
+    const diff = providerPrompt !== null ? providerPrompt - est : null;
     const diffPct =
-      diff !== null && localEst > 0
-        ? `${diff >= 0 ? "+" : ""}${((diff / localEst) * 100).toFixed(1)}%`
+      diff !== null && est > 0
+        ? `${diff >= 0 ? "+" : ""}${((diff / est) * 100).toFixed(1)}%`
         : null;
 
-    return {
-      prompt,
-      localEstimate: localEst,
-      providerPromptTokens: providerPrompt,
-      providerCompletionTokens: providerCompletion,
-      diff,
-      diffPct,
-    };
+    return { prompt, localEst: est, providerPromptTokens: providerPrompt, providerCompletionTokens: providerCompletion, diff, diffPct };
   } catch (err) {
     return {
-      prompt,
-      localEstimate: localEst,
-      providerPromptTokens: null,
-      providerCompletionTokens: null,
-      diff: null,
-      diffPct: null,
-      error: String(err),
+      prompt, localEst: est,
+      providerPromptTokens: null, providerCompletionTokens: null,
+      diff: null, diffPct: null, error: String(err),
     };
   }
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
   console.log("=".repeat(70));
   console.log("TokenSaver — Token Accuracy Verification Script");
   console.log("=".repeat(70));
   console.log();
-  console.log("Purpose: confirms provider-reported token counts are used for actuals,");
-  console.log("         and local tokenizer is only used for the baseline estimate.");
+  console.log("Confirms provider-reported token counts are used for actuals,");
+  console.log("and local tokenizer is only used for the baseline estimate.");
   console.log();
 
   for (const provider of PROVIDERS) {
-    console.log(`\n── ${provider.name} (${provider.model}) ─────────────────────────`);
+    console.log(`\n── ${provider.name} (${provider.model}) ${"─".repeat(20)}`);
 
     if (!provider.apiKey) {
       console.log("  Skipped — no API key configured");
@@ -188,41 +165,38 @@ async function main() {
 
     const results: TestResult[] = [];
     for (const prompt of TEST_PROMPTS) {
-      process.stdout.write(`  Testing: "${prompt.slice(0, 40)}…" `);
+      process.stdout.write(`  Testing: "${prompt.slice(0, 45)}"  `);
       const result = await runTest(provider, prompt);
       results.push(result);
       if (result.error) {
         console.log(`ERROR: ${result.error}`);
       } else {
         console.log(
-          `local=${result.localEstimate} | provider=${result.providerPromptTokens} | diff=${result.diff} (${result.diffPct})`
+          `local=${result.localEst} | provider=${result.providerPromptTokens} | diff=${result.diff} (${result.diffPct})`
         );
       }
     }
 
-    // Summary
     const valid = results.filter((r) => r.diff !== null);
     if (valid.length > 0) {
       const avgDiff = valid.reduce((s, r) => s + Math.abs(r.diff!), 0) / valid.length;
       const maxDiff = Math.max(...valid.map((r) => Math.abs(r.diff!)));
-      console.log(`\n  Summary: ${valid.length}/${results.length} tests succeeded`);
-      console.log(`  Avg absolute diff: ${avgDiff.toFixed(1)} tokens`);
-      console.log(`  Max absolute diff: ${maxDiff} tokens`);
+      console.log(`\n  Summary: ${valid.length}/${results.length} tests passed`);
+      console.log(`  Avg |diff|: ${avgDiff.toFixed(1)} tokens   Max |diff|: ${maxDiff} tokens`);
       if (avgDiff > 10) {
-        console.log("  ⚠ WARNING: High average diff — local tokenizer may not match this provider well.");
-        console.log("    Actual sent tokens from provider usage object are still correct.");
-        console.log("    Only the displayed 'original baseline' estimate is affected.");
+        console.log("  ⚠  High avg diff — local tokenizer is not well-matched to this provider.");
+        console.log("     Actual counts from provider usage object are still correct.");
+        console.log("     Only the 'original baseline' estimate in the UI is affected.");
       } else {
-        console.log("  ✓ Local estimates are close — baseline display is accurate.");
+        console.log("  ✓  Local estimates are close — baseline display is accurate.");
       }
     }
   }
 
   console.log("\n" + "=".repeat(70));
-  console.log("Note: historical rows in `messages` table populated before this update");
-  console.log("may have used local estimates for compressed_tokens instead of real");
-  console.log("provider usage. A backfill is not possible (original usage data not");
-  console.log("stored). Token accuracy for actual counts is correct from this update onward.");
+  console.log("Historical note: messages written before this update may have used");
+  console.log("local estimates for compressed_tokens instead of real provider usage.");
+  console.log("Backfill not possible. Token accuracy is correct from this update onward.");
   console.log("=".repeat(70));
 }
 
