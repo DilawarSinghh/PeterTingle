@@ -18,13 +18,10 @@ export default function MessageBubble({ message }: Props) {
             : "bg-white text-gray-900 shadow-sm border border-gray-100"
         }`}
       >
-        {/* Show original vs compressed diff hint for user messages */}
         {isUser &&
           message.originalContent &&
           message.content !== message.originalContent && (
-            <p className="mb-1.5 text-xs text-brand-200">
-              ✂ Input compressed
-            </p>
+            <p className="mb-1.5 text-xs text-brand-200">✂ Input compressed</p>
           )}
 
         <p

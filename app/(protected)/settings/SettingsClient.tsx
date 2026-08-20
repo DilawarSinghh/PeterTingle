@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { CompressionLevel } from "@/types/database";
+import ApiKeysSection from "@/components/settings/ApiKeysSection";
 
 interface Props {
   initialProfile: {
@@ -161,6 +162,9 @@ export default function SettingsClient({ initialProfile }: Props) {
             {saving ? "Saving…" : saved ? "Saved ✓" : "Save level"}
           </button>
         </section>
+
+        {/* API Keys (BYOK) */}
+        <ApiKeysSection />
 
         {/* Danger zone */}
         <section className="rounded-xl border border-red-200 bg-red-50 p-6 space-y-4">
