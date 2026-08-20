@@ -5,7 +5,7 @@
  */
 
 export type CompressionLevel = "lite" | "full" | "ultra";
-export type Provider = "openai" | "anthropic" | "groq" | "openrouter";
+export type Provider = "openai" | "anthropic" | "groq" | "openrouter" | "nvidia";
 export type KeySource = "platform" | "user";
 
 // ─── Core entities ────────────────────────────────────────────────────────────

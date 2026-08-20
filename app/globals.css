@@ -4,8 +4,18 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    --background: #0a0f0d;
+    --surface: #111a14;
+    --surface-2: #172019;
+    --surface-3: #1e2b1f;
+    --accent: #22c55e;
+    --accent-hover: #16a34a;
+    --accent-muted: #166534;
+    --accent-dim: #14532d;
+    --text-primary: #e8f5e9;
+    --text-secondary: #6b8f72;
+    --text-muted: #4a6b50;
+    --border: #1e2b1f;
   }
 
   html {
@@ -13,70 +23,103 @@
   }
 
   body {
-    @apply bg-gray-50 text-gray-900;
+    background-color: var(--background);
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.6;
   }
 
-  /* Smooth scrolling for chat */
+  /* Smooth scrolling */
   .chat-scroll {
     scroll-behavior: smooth;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--surface);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--surface-3);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-muted);
   }
 }
 
 @layer components {
+  /* ── Buttons ─────────────────────────────────────────────────────────── */
   .btn-primary {
-    @apply inline-flex items-center justify-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-md bg-accent px-4 py-2 text-sm font-medium text-background shadow-sm transition-colors
+           hover:bg-accent-hover
+           focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background
+           disabled:opacity-40 disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-md border border-surface-3 bg-surface px-4 py-2 text-sm font-medium text-text-primary shadow-sm transition-colors
+           hover:bg-surface-2
+           focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background
+           disabled:opacity-40 disabled:cursor-not-allowed;
   }
 
   .btn-ghost {
-    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2;
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium text-text-secondary transition-colors
+           hover:bg-surface-2 hover:text-text-primary
+           focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background;
   }
 
+  /* ── Inputs ──────────────────────────────────────────────────────────── */
   .input {
-    @apply block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder-gray-400 shadow-sm transition-colors focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500;
+    @apply block w-full rounded-md border border-surface-3 bg-surface-2 px-3 py-2 text-sm text-text-primary
+           placeholder:text-text-muted shadow-sm transition-colors
+           focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent;
   }
 
+  /* ── Cards ───────────────────────────────────────────────────────────── */
   .card {
-    @apply rounded-xl border border-gray-200 bg-white shadow-sm;
+    @apply rounded-xl border border-surface-3 bg-surface shadow-sm;
   }
 
+  /* ── Savings badge ───────────────────────────────────────────────────── */
   .savings-badge {
-    @apply inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700;
+    @apply inline-flex items-center gap-1 rounded-full bg-success-bg px-2 py-0.5 text-xs font-medium text-success;
   }
 }
+
+/* ── Animations ─────────────────────────────────────────────────────────── */
 
 /* Streaming cursor */
 @keyframes blink {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  50%       { opacity: 0; }
 }
-
 .streaming-cursor::after {
   content: "▋";
   animation: blink 1s step-start infinite;
   margin-left: 1px;
+  color: var(--accent);
 }
 
-/* Logo spinner — used while waiting for LLM response */
+/* Logo / waiting spinner */
 @keyframes spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
-
 .logo-spinner {
   animation: spin 1s linear infinite;
   display: inline-block;
 }
 
-/* Chat message fade-in */
+/* Message fade-in */
 .message-enter {
   animation: slideUp 0.2s ease-out;
 }
-
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0); }
 }

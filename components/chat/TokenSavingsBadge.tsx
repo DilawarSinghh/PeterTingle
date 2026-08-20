@@ -20,60 +20,53 @@ export default function TokenSavingsBadge({ stats }: Props) {
     basis,
   } = stats;
 
-  const hasSavings = totalTokensSaved > 0;
-  // Label suffix: real counts get no qualifier, estimates get (est.)
+  // Guard against NaN/undefined
+  const hasSavings = (totalTokensSaved ?? 0) > 0;
   const actualLabel = usageFromProvider ? "" : " (est.)";
 
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-      {/* Input compression savings */}
-      {inputTokensSaved > 0 && (
+    <div className="flex flex-wrap items-center gap-1.5 text-xs text-text-secondary">
+      {/* Input savings */}
+      {(inputTokensSaved ?? 0) > 0 && (inputOriginalTokens ?? 0) > 0 && (
         <span className="savings-badge">
-          ✂ Input:{" "}
-          <span className="italic text-emerald-500" title="Local estimate — hypothetical original token count">
-            {inputOriginalTokens.toLocaleString()} est.
+          ✂{" "}
+          <span className="italic text-text-secondary" title="Local estimate — hypothetical without compression">
+            {(inputOriginalTokens ?? 0).toLocaleString()} est.
           </span>
           {" → "}
-          <span title={usageFromProvider ? "Real provider-reported token count" : "Local estimate"}>
-            {inputActualTokens.toLocaleString()}{actualLabel}
+          <span title={usageFromProvider ? "Real provider token count" : "Local estimate"}>
+            {(inputActualTokens ?? 0).toLocaleString()}{actualLabel}
           </span>
-          {" "}
-          <strong>−{inputPctSaved}%</strong>
+          {" "}<strong>−{inputPctSaved ?? 0}%</strong>
         </span>
       )}
 
-      {/* Output tokens */}
+      {/* Output */}
       <span
-        className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-gray-600"
-        title={usageFromProvider ? "Real provider-reported output tokens" : "Local estimate"}
+        className="inline-flex items-center gap-1 rounded-full bg-surface-3 px-2 py-0.5 text-text-secondary"
+        title={usageFromProvider ? "Real provider output tokens" : "Local estimate"}
       >
-        Out: {outputActualTokens.toLocaleString()}{actualLabel}
+        Out: {(outputActualTokens ?? 0).toLocaleString()}{actualLabel}
       </span>
 
       {/* Total saved */}
       {hasSavings && (
         <span className="savings-badge">
-          ⛏ {totalTokensSaved.toLocaleString()} tokens saved
-          {costKnown && costSavedUsd > 0 && (
-            <span className="ml-1 text-emerald-600">
-              ≈ ${costSavedUsd.toFixed(5)}
-            </span>
+          ⛏ {(totalTokensSaved ?? 0).toLocaleString()} saved
+          {costKnown && (costSavedUsd ?? 0) > 0 && (
+            <span className="ml-1 text-success">≈ ${(costSavedUsd ?? 0).toFixed(5)}</span>
           )}
           {!costKnown && (
-            <span className="ml-1 text-gray-400 italic">· cost data unavailable</span>
+            <span className="ml-1 text-text-muted italic">· cost n/a</span>
           )}
         </span>
       )}
 
-      {/* Basis label — only show "inferred" if NOT from provider */}
+      {/* Basis indicator */}
       {basis === "provider" ? (
-        <span className="text-emerald-500 font-medium text-[10px]" title="Token counts from provider usage object">
-          ✓ provider
-        </span>
+        <span className="text-[10px] font-medium text-accent" title="Token counts from provider usage object">✓ provider</span>
       ) : (
-        <span className="text-gray-400 italic" title="Provider did not return usage data — counts are local estimates">
-          inferred
-        </span>
+        <span className="text-[10px] text-text-muted italic" title="Provider did not return usage data — local estimates">inferred</span>
       )}
     </div>
   );

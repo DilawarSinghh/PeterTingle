@@ -8,10 +8,10 @@ interface KeyStatus {
 }
 
 const PROVIDERS = [
-  { id: "openai",      label: "OpenAI",      placeholder: "sk-..." },
-  { id: "anthropic",   label: "Anthropic",   placeholder: "sk-ant-..." },
-  { id: "groq",        label: "Groq",        placeholder: "gsk_..." },
-  { id: "openrouter",  label: "OpenRouter",  placeholder: "sk-or-..." },
+  { id: "openai",     label: "OpenAI",     placeholder: "sk-..." },
+  { id: "anthropic",  label: "Anthropic",  placeholder: "sk-ant-..." },
+  { id: "groq",       label: "Groq",       placeholder: "gsk_..." },
+  { id: "openrouter", label: "OpenRouter", placeholder: "sk-or-..." },
 ];
 
 export default function ApiKeysSection() {
@@ -36,16 +36,13 @@ export default function ApiKeysSection() {
   async function handleSave(provider: string) {
     const key = inputValues[provider]?.trim();
     if (!key) return;
-
     setSaving((p) => ({ ...p, [provider]: true }));
     setErrors((p) => ({ ...p, [provider]: "" }));
-
     const res = await fetch("/api/keys", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ provider, apiKey: key }),
     });
-
     if (res.ok) {
       setKeyStatuses((prev) => {
         const existing = prev.find((k) => k.provider === provider);
@@ -64,10 +61,8 @@ export default function ApiKeysSection() {
   async function handleTest(provider: string) {
     const key = inputValues[provider]?.trim();
     if (!key) return;
-
     setTesting((p) => ({ ...p, [provider]: true }));
     setTestResults((p) => ({ ...p, [provider]: null }));
-
     const res = await fetch("/api/keys/test", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -91,16 +86,15 @@ export default function ApiKeysSection() {
   return (
     <section className="card p-6 space-y-6">
       <div>
-        <h2 className="text-base font-semibold text-gray-800">API Keys (BYOK)</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Your keys are encrypted at rest and used <strong>only</strong> when the platform quota
-          for a given provider is reached. You&apos;ll see a{" "}
-          <span className="text-amber-600 font-medium">🔑 via your API key</span> label in chat
-          when this happens.
+        <h2 className="text-base font-semibold text-text-primary">API Keys (BYOK)</h2>
+        <p className="mt-1 text-sm text-text-secondary">
+          Keys are encrypted at rest and used <strong className="text-text-primary">only</strong> when
+          platform quota for a provider is reached. You&apos;ll see a{" "}
+          <span className="text-warning font-medium">🔑 via your API key</span> label in chat when this happens.
         </p>
       </div>
 
-      <div className="space-y-5">
+      <div className="space-y-4">
         {PROVIDERS.map(({ id, label, placeholder }) => {
           const status = getStatus(id);
           const hasKey = !!status;
@@ -108,21 +102,20 @@ export default function ApiKeysSection() {
           const testResult = testResults[id];
 
           return (
-            <div key={id} className="rounded-lg border border-gray-200 p-4 space-y-3">
+            <div key={id} className="rounded-lg border border-surface-3 bg-surface-2 p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-800">{label}</span>
+                <span className="text-sm font-medium text-text-primary">{label}</span>
                 <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                   !hasKey
-                    ? "bg-gray-100 text-gray-500"
+                    ? "bg-surface-3 text-text-muted"
                     : isVerified
-                    ? "bg-emerald-100 text-emerald-700"
-                    : "bg-amber-100 text-amber-700"
+                    ? "bg-success-bg text-success"
+                    : "bg-warning-bg text-warning"
                 }`}>
                   {!hasKey ? "Not set" : isVerified ? "Verified ✓" : "Saved (unverified)"}
                 </span>
               </div>
 
-              {/* Input row */}
               <div className="flex gap-2">
                 <input
                   type="password"
@@ -132,41 +125,22 @@ export default function ApiKeysSection() {
                   className="input flex-1 font-mono text-xs"
                   autoComplete="off"
                 />
-                <button
-                  onClick={() => handleTest(id)}
-                  disabled={!inputValues[id]?.trim() || testing[id]}
-                  className="btn-secondary px-3 text-xs whitespace-nowrap"
-                >
+                <button onClick={() => handleTest(id)} disabled={!inputValues[id]?.trim() || testing[id]} className="btn-secondary px-3 text-xs whitespace-nowrap">
                   {testing[id] ? "Testing…" : "Test key"}
                 </button>
-                <button
-                  onClick={() => handleSave(id)}
-                  disabled={!inputValues[id]?.trim() || saving[id]}
-                  className="btn-primary px-3 text-xs"
-                >
+                <button onClick={() => handleSave(id)} disabled={!inputValues[id]?.trim() || saving[id]} className="btn-primary px-3 text-xs">
                   {saving[id] ? "Saving…" : "Save"}
                 </button>
               </div>
 
-              {/* Feedback */}
-              {errors[id] && (
-                <p className="text-xs text-red-600">{errors[id]}</p>
-              )}
+              {errors[id] && <p className="text-xs text-error">{errors[id]}</p>}
               {testResult && (
-                <p className={`text-xs font-medium ${testResult.valid ? "text-emerald-600" : "text-red-600"}`}>
-                  {testResult.valid
-                    ? "✓ Key is valid and working"
-                    : `✗ Invalid — ${testResult.error ?? "check your key"}`}
+                <p className={`text-xs font-medium ${testResult.valid ? "text-success" : "text-error"}`}>
+                  {testResult.valid ? "✓ Key is valid and working" : `✗ Invalid — ${testResult.error ?? "check your key"}`}
                 </p>
               )}
-
-              {/* Remove */}
               {hasKey && (
-                <button
-                  onClick={() => handleRemove(id)}
-                  disabled={removing[id]}
-                  className="text-xs text-red-500 hover:text-red-700 underline disabled:opacity-50"
-                >
+                <button onClick={() => handleRemove(id)} disabled={removing[id]} className="text-xs text-error hover:opacity-80 underline disabled:opacity-40">
                   {removing[id] ? "Removing…" : "Remove saved key"}
                 </button>
               )}

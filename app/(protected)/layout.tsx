@@ -8,22 +8,16 @@ export default async function ProtectedLayout({
   children: React.ReactNode;
 }) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/login");
-  }
+  if (!user) redirect("/login");
 
-  // Fetch profile
   const { data: profile } = await supabase
     .from("profiles")
     .select("display_name, compression_level")
     .eq("id", user.id)
     .single();
 
-  // Create profile if missing (first login via OAuth)
   if (!profile) {
     await supabase.from("profiles").upsert({
       id: user.id,
@@ -33,7 +27,7 @@ export default async function ProtectedLayout({
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar
         user={{
           email: user.email ?? "",

@@ -1,6 +1,8 @@
 /**
  * lib/supabase/middleware.ts
- * Supabase session refresh helper for Next.js middleware.
+ * Session refresh on every request.
+ * Uses getUser() — NOT getSession() — which revalidates against Supabase server.
+ * Sets cookies with correct sameSite/secure/path for persistent sessions.
  */
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
@@ -19,19 +21,26 @@ export async function updateSession(request: NextRequest) {
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
+          // Write cookies onto the request (for downstream handlers)
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
+          // Rebuild response so refreshed tokens are written to the browser
           supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, {
+              ...options,
+              sameSite: "lax",
+              secure: process.env.NODE_ENV === "production",
+              path: "/",
+            })
           );
         },
       },
     }
   );
 
-  // Refresh session — IMPORTANT: do not remove this await
+  // IMPORTANT: use getUser() not getSession() — validates token against Supabase server
   const { data: { user } } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;

@@ -12,22 +12,22 @@ export default function MessageBubble({ message }: Props) {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+        className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm leading-relaxed ${
           isUser
-            ? "bg-brand-600 text-white"
-            : "bg-white text-gray-900 shadow-sm border border-gray-100"
+            ? "bg-accent-muted text-text-primary border border-accent-dim"
+            : "bg-surface text-text-primary border border-surface-3"
         }`}
       >
         {isUser &&
           message.originalContent &&
           message.content !== message.originalContent && (
-            <p className="mb-1.5 text-xs text-brand-200">✂ Input compressed</p>
+            <p className="mb-1.5 text-xs text-accent opacity-70">✂ Input compressed</p>
           )}
 
         <p
           className={`whitespace-pre-wrap break-words ${
             message.streaming ? "streaming-cursor" : ""
-          }`}
+          } ${message.error ? "text-error" : ""}`}
         >
           {message.content || (message.streaming ? "" : "…")}
         </p>
