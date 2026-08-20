@@ -60,6 +60,17 @@
   margin-left: 1px;
 }
 
+/* Logo spinner — used while waiting for LLM response */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.logo-spinner {
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
 /* Chat message fade-in */
 .message-enter {
   animation: slideUp 0.2s ease-out;

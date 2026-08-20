@@ -63,7 +63,10 @@ cp .env.example .env.local
 | `LLM_MODEL` | ✅ | Default model ID |
 | `OPENAI_API_KEY` | optional | Platform key for OpenAI models |
 | `ANTHROPIC_API_KEY` | optional | Platform key for Anthropic models |
-| `GROQ_API_KEY` | optional | Platform key for Groq models |
+| `GROQ_API_KEY` | optional | Platform key for Groq models (also enables dynamic model listing) |
+| `NVIDIA_NIM_API_KEY` | optional | Platform key for NVIDIA NIM models (also enables dynamic model listing) |
+| `CRON_SECRET` | optional | Secret for Vercel Cron to authenticate `/api/admin/sync-models` |
+| `ADMIN_EMAILS` | optional | Comma-separated emails allowed to trigger manual model sync |
 | `KEY_ENCRYPTION_SECRET` | ✅ for BYOK | Secret for pgcrypto key encryption. Generate: `openssl rand -base64 32` |
 | `NEXT_PUBLIC_APP_URL` | ✅ | Your deployment URL |
 
@@ -78,6 +81,31 @@ npm run dev
 
 Connect the GitHub repo in Vercel dashboard — auto-deploys on push.
 Add all env vars from the table above in **Settings → Environment Variables**.
+
+---
+
+## Token accuracy
+
+From this update onward, **actual sent/received token counts** in the chat UI and database come from the provider's real `usage` object (e.g. `usage.prompt_tokens`, `usage.completion_tokens`), not from a local tokenizer estimate.
+
+The **original/baseline count** (what would have been sent without compression) is still a local tiktoken estimate — it's labeled `est.` in the UI and "inferred" in the footer, since by definition this number is never sent to a provider.
+
+**Historical note:** rows in the `messages` table written before this update may have used the local tiktoken estimate for `compressed_tokens` instead of real provider usage. A backfill is not possible (the original API responses' usage data was not stored). Token accuracy for actual counts is correct from this update onward.
+
+To verify accuracy across providers, run:
+```bash
+npx tsx scripts/verify-token-accuracy.ts
+```
+
+---
+
+## Dynamic model listing (Groq + NVIDIA NIM)
+
+When `GROQ_API_KEY` or `NVIDIA_NIM_API_KEY` are set, a Vercel Cron job runs daily at 04:00 UTC hitting `POST /api/admin/sync-models`. This fetches each provider's live `/models` endpoint and upserts results into the `models` table. Disappeared models are marked `is_active = false` (never deleted — messages reference them via FK).
+
+To trigger a manual sync, set `ADMIN_EMAILS` to your email and POST to `/api/admin/sync-models` while logged in.
+
+Cost data for models not in `lib/model-cost-overrides.ts` shows "cost data unavailable" in the dashboard rather than a fabricated number.
 
 ---
 
@@ -104,6 +132,7 @@ To reset the quota counter, update `platform_usage.period_start` to the current 
 | OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` |
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-haiku-3-5` |
 | Groq | `GROQ_API_KEY` | `llama-3.1-8b-instant` |
+| NVIDIA NIM | `NVIDIA_NIM_API_KEY` | `meta/llama-3.1-8b-instruct` |
 
 ---
 

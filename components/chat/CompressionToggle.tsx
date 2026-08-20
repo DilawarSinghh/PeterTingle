@@ -7,6 +7,7 @@ interface Props {
   level: CompressionLevel;
   onToggle: (enabled: boolean) => void;
   onLevelChange: (level: CompressionLevel) => void;
+  disabled?: boolean;
 }
 
 const LEVELS: { value: CompressionLevel; label: string; desc: string }[] = [
@@ -20,6 +21,7 @@ export default function CompressionToggle({
   level,
   onToggle,
   onLevelChange,
+  disabled = false,
 }: Props) {
   return (
     <div className="flex items-center gap-3">
@@ -31,7 +33,8 @@ export default function CompressionToggle({
               key={l.value}
               onClick={() => onLevelChange(l.value)}
               title={l.desc}
-              className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+              disabled={disabled}
+              className={`rounded-md px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                 level === l.value
                   ? "bg-brand-600 text-white shadow-sm"
                   : "text-gray-500 hover:text-gray-700"
@@ -46,7 +49,8 @@ export default function CompressionToggle({
       {/* Toggle */}
       <button
         onClick={() => onToggle(!enabled)}
-        className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+        disabled={disabled}
+        className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
           enabled
             ? "border-brand-200 bg-brand-50 text-brand-700"
             : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"

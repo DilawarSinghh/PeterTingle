@@ -6,11 +6,16 @@
  * 2. Parse body — includes modelId
  * 3. Look up model row → provider + base_url
  * 4. Resolve API key: platform quota check → BYOK fallback
- * 5. Input compression
- * 6. Build provider-specific request (OpenAI-compat or Anthropic adapter)
- * 7. Stream response back via SSE
- * 8. Persist messages + usage_logs
- * 9. Auto-generate conversation title from first user message
+ * 5. Input compression (local estimate for "original" baseline only)
+ * 6. Build provider-specific request (OpenAI-compat, Anthropic, NVIDIA NIM)
+ * 7. Stream response via SSE
+ * 8. Use provider-reported usage.tokens for actuals (NOT local estimate)
+ * 9. Persist messages + usage_logs, auto-title conversation
+ *
+ * Token accuracy:
+ *  - tokens_actual (raw_tokens, compressed_tokens) = provider usage object
+ *  - tokens_original (what we would have sent without compression) = local tiktoken estimate
+ *  - Savings = tokens_original_input - tokens_actual_input (actual provider cost reduction)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -23,11 +28,11 @@ import {
   computeSavings,
   estimateCost,
 } from "@/lib/compression";
+import { getModelCost } from "@/lib/model-cost-overrides";
 import type { CompressionLevel } from "@/types/database";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Strip markdown and truncate for auto-title */
 function makeTitle(text: string, maxLen = 40): string {
   return text
     .replace(/[#*`_~\[\]()>!]/g, "")
@@ -36,7 +41,6 @@ function makeTitle(text: string, maxLen = 40): string {
     .slice(0, maxLen);
 }
 
-/** Decrypt a user API key stored with pgp_sym_encrypt */
 async function decryptUserKey(
   serviceClient: ReturnType<typeof createServiceClient>,
   userId: string,
@@ -44,18 +48,15 @@ async function decryptUserKey(
 ): Promise<string | null> {
   const secret = process.env.KEY_ENCRYPTION_SECRET;
   if (!secret) return null;
-
   const { data, error } = await (serviceClient as any).rpc("decrypt_user_api_key", {
     p_user_id: userId,
     p_provider: provider,
     p_secret: secret,
   });
-
   if (error || !data) return null;
   return data as string;
 }
 
-/** Check whether platform quota for a provider is exhausted */
 async function isPlatformQuotaExhausted(
   serviceClient: ReturnType<typeof createServiceClient>,
   provider: string
@@ -65,12 +66,10 @@ async function isPlatformQuotaExhausted(
     .select("tokens_used, monthly_quota")
     .eq("provider", provider)
     .single();
-
-  if (!data) return false; // no row → no limit configured
+  if (!data) return false;
   return data.tokens_used >= data.monthly_quota;
 }
 
-/** Increment platform token usage after a successful call */
 async function incrementPlatformUsage(
   serviceClient: ReturnType<typeof createServiceClient>,
   provider: string,
@@ -86,12 +85,7 @@ async function incrementPlatformUsage(
 
 type LLMMessage = { role: "system" | "user" | "assistant"; content: string };
 
-interface AdapterResponse {
-  stream: ReadableStream<Uint8Array>;
-  isStreaming: boolean;
-}
-
-/** OpenAI-compatible adapter (OpenAI, Groq, OpenRouter) */
+/** OpenAI-compatible (OpenAI, Groq, OpenRouter, NVIDIA NIM) */
 async function callOpenAICompat(
   baseUrl: string,
   apiKey: string,
@@ -116,13 +110,12 @@ async function callOpenAICompat(
   });
 }
 
-/** Anthropic adapter — converts OpenAI message format to Anthropic's /v1/messages */
+/** Anthropic /v1/messages — different shape */
 async function callAnthropic(
   apiKey: string,
   model: string,
   messages: LLMMessage[]
 ): Promise<Response> {
-  // Extract system message
   const system = messages.find((m) => m.role === "system")?.content ?? "";
   const anthropicMessages = messages
     .filter((m) => m.role !== "system")
@@ -134,7 +127,6 @@ async function callAnthropic(
       "Content-Type": "application/json",
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
-      "anthropic-beta": "messages-2023-12-15",
     },
     body: JSON.stringify({
       model,
@@ -146,16 +138,17 @@ async function callAnthropic(
   });
 }
 
-// ── SSE parsers ────────────────────────────────────────────────────────────────
+// ── SSE parsers — each yields real provider usage ─────────────────────────────
 
-/** Parse OpenAI-compatible SSE stream, yielding text deltas and usage */
-async function* parseOpenAIStream(
-  body: ReadableStream<Uint8Array>
-): AsyncGenerator<{ delta?: string; usage?: { prompt_tokens: number; completion_tokens: number } }> {
+interface StreamChunk {
+  delta?: string;
+  usage?: { prompt_tokens: number; completion_tokens: number };
+}
+
+async function* parseOpenAIStream(body: ReadableStream<Uint8Array>): AsyncGenerator<StreamChunk> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -163,14 +156,21 @@ async function* parseOpenAIStream(
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
-
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue;
         const data = line.slice(6).trim();
         if (data === "[DONE]") return;
         try {
           const parsed = JSON.parse(data);
-          if (parsed.usage) yield { usage: parsed.usage };
+          // Provider-reported real usage (comes in final chunk with include_usage)
+          if (parsed.usage) {
+            yield {
+              usage: {
+                prompt_tokens: parsed.usage.prompt_tokens ?? 0,
+                completion_tokens: parsed.usage.completion_tokens ?? 0,
+              },
+            };
+          }
           const delta = parsed.choices?.[0]?.delta?.content ?? "";
           if (delta) yield { delta };
         } catch { /* skip malformed */ }
@@ -181,16 +181,12 @@ async function* parseOpenAIStream(
   }
 }
 
-/** Parse Anthropic SSE stream */
-async function* parseAnthropicStream(
-  body: ReadableStream<Uint8Array>
-): AsyncGenerator<{ delta?: string; usage?: { prompt_tokens: number; completion_tokens: number } }> {
+async function* parseAnthropicStream(body: ReadableStream<Uint8Array>): AsyncGenerator<StreamChunk> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let inputTokens = 0;
   let outputTokens = 0;
-
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -198,25 +194,24 @@ async function* parseAnthropicStream(
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
-
       for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const parsed = JSON.parse(line.slice(6));
-            if (parsed.type === "content_block_delta") {
-              yield { delta: parsed.delta?.text ?? "" };
-            }
-            if (parsed.type === "message_start" && parsed.message?.usage) {
-              inputTokens = parsed.message.usage.input_tokens ?? 0;
-            }
-            if (parsed.type === "message_delta" && parsed.usage) {
-              outputTokens = parsed.usage.output_tokens ?? 0;
-            }
-            if (parsed.type === "message_stop") {
-              yield { usage: { prompt_tokens: inputTokens, completion_tokens: outputTokens } };
-            }
-          } catch { /* skip */ }
-        }
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const parsed = JSON.parse(line.slice(6));
+          if (parsed.type === "content_block_delta") {
+            yield { delta: parsed.delta?.text ?? "" };
+          }
+          // Real token counts from Anthropic
+          if (parsed.type === "message_start" && parsed.message?.usage) {
+            inputTokens = parsed.message.usage.input_tokens ?? 0;
+          }
+          if (parsed.type === "message_delta" && parsed.usage) {
+            outputTokens = parsed.usage.output_tokens ?? 0;
+          }
+          if (parsed.type === "message_stop") {
+            yield { usage: { prompt_tokens: inputTokens, completion_tokens: outputTokens } };
+          }
+        } catch { /* skip */ }
       }
     }
   } finally {
@@ -224,13 +219,21 @@ async function* parseAnthropicStream(
   }
 }
 
-// ── Platform API key resolver ─────────────────────────────────────────────────
+// ── Platform API key map ──────────────────────────────────────────────────────
 
 const PLATFORM_KEYS: Record<string, string | undefined> = {
-  openai: process.env.OPENAI_API_KEY,
-  anthropic: process.env.ANTHROPIC_API_KEY,
-  groq: process.env.GROQ_API_KEY,
-  openrouter: process.env.LLM_API_KEY, // legacy env var
+  openai:     process.env.OPENAI_API_KEY,
+  anthropic:  process.env.ANTHROPIC_API_KEY,
+  groq:       process.env.GROQ_API_KEY,
+  nvidia:     process.env.NVIDIA_NIM_API_KEY,
+  openrouter: process.env.LLM_API_KEY,
+};
+
+const PROVIDER_BASE_URLS: Record<string, string> = {
+  openai:     "https://api.openai.com/v1",
+  groq:       "https://api.groq.com/openai/v1",
+  nvidia:     "https://integrate.api.nvidia.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
 };
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -238,7 +241,6 @@ const PLATFORM_KEYS: Record<string, string | undefined> = {
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const serviceClient = createServiceClient();
-
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -249,7 +251,6 @@ export async function POST(request: NextRequest) {
     compressionLevel?: CompressionLevel;
     modelId?: string;
   };
-
   try {
     body = await request.json();
   } catch {
@@ -268,7 +269,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "message is required" }, { status: 400 });
   }
 
-  // ── Resolve model ─────────────────────────────────────────────────────────
+  // ── Resolve model ──────────────────────────────────────────────────────────
   const effectiveModelId = modelId ?? process.env.LLM_MODEL ?? "gpt-4o-mini";
 
   const { data: modelRow } = await supabase
@@ -277,14 +278,22 @@ export async function POST(request: NextRequest) {
     .eq("id", effectiveModelId)
     .single();
 
-  // Fallback to env vars if model not found in DB
   const provider = modelRow?.provider ?? "openrouter";
-  const baseUrl = modelRow?.base_url ?? (process.env.LLM_API_BASE_URL ?? "https://openrouter.ai/api/v1");
-  const pricePerMillion = modelRow?.input_cost_per_1k != null
-    ? modelRow.input_cost_per_1k * 1000
-    : parseFloat(process.env.LLM_PRICE_PER_MILLION_TOKENS ?? "1.0");
+  const baseUrl =
+    modelRow?.base_url ??
+    PROVIDER_BASE_URLS[provider] ??
+    (process.env.LLM_API_BASE_URL ?? "https://openrouter.ai/api/v1");
 
-  // ── Resolve API key (quota check → BYOK fallback) ─────────────────────────
+  // Cost: prefer DB row, fall back to override map, then env var
+  const costOverride = getModelCost(effectiveModelId);
+  const pricePerMillion =
+    (modelRow?.input_cost_per_1k ?? costOverride?.input_cost_per_1k ?? null) != null
+      ? (modelRow?.input_cost_per_1k ?? costOverride!.input_cost_per_1k) * 1000
+      : parseFloat(process.env.LLM_PRICE_PER_MILLION_TOKENS ?? "1.0");
+  const costKnown =
+    (modelRow?.input_cost_per_1k ?? costOverride?.input_cost_per_1k) != null;
+
+  // ── Resolve API key ────────────────────────────────────────────────────────
   let apiKey: string | null = null;
   let keySource: "platform" | "user" = "platform";
 
@@ -296,7 +305,6 @@ export async function POST(request: NextRequest) {
   }
 
   if (!apiKey || quotaExhausted) {
-    // Try user's own key
     const userKey = await decryptUserKey(serviceClient, user.id, provider);
     if (userKey) {
       apiKey = userKey;
@@ -329,7 +337,6 @@ export async function POST(request: NextRequest) {
       .insert({ user_id: user.id, title: null, default_model_id: effectiveModelId })
       .select("id")
       .single();
-
     if (convErr || !conv) {
       return NextResponse.json({ error: "Failed to create conversation" }, { status: 500 });
     }
@@ -337,15 +344,14 @@ export async function POST(request: NextRequest) {
     isNewConversation = true;
   }
 
-  // ── Check if this is the first message (for auto-title) ───────────────────
+  // Auto-title check
   const { count: existingMsgCount } = await supabase
     .from("messages")
     .select("id", { count: "exact", head: true })
     .eq("conversation_id", convId);
-
   const shouldAutoTitle = isNewConversation || (existingMsgCount ?? 0) === 0;
 
-  // ── Fetch conversation history ─────────────────────────────────────────────
+  // ── Fetch history ──────────────────────────────────────────────────────────
   const { data: history } = await supabase
     .from("messages")
     .select("role, compressed_content, original_content")
@@ -353,18 +359,21 @@ export async function POST(request: NextRequest) {
     .order("created_at", { ascending: true })
     .limit(20);
 
-  // ── Input compression ──────────────────────────────────────────────────────
+  // ── Compression ───────────────────────────────────────────────────────────
+  // tokens_original = local estimate (hypothetical "without compression" baseline)
+  const originalTokenCount = countTokens(message); // always a local estimate — labeled as such
+
   const compressionResult = compressionEnabled
     ? compressInput(message, compressionLevel)
     : {
         original: message,
         compressed: message,
-        rawTokens: countTokens(message),
-        compressedTokens: countTokens(message),
+        rawTokens: originalTokenCount,
+        compressedTokens: originalTokenCount,
         basis: "inferred" as const,
       };
 
-  // ── Persist user message ───────────────────────────────────────────────────
+  // ── Persist user message (placeholder — actual token counts updated after stream) ──
   const { data: userMsg } = await supabase
     .from("messages")
     .insert({
@@ -372,7 +381,9 @@ export async function POST(request: NextRequest) {
       role: "user",
       original_content: compressionResult.original,
       compressed_content: compressionResult.compressed,
+      // raw_tokens = original (local estimate, the "would have been" baseline)
       raw_tokens: compressionResult.rawTokens,
+      // compressed_tokens will be updated to actual after provider reports usage
       compressed_tokens: compressionResult.compressedTokens,
       tokens_saved: Math.max(0, compressionResult.rawTokens - compressionResult.compressedTokens),
       compression_level: compressionEnabled ? compressionLevel : "none",
@@ -401,13 +412,15 @@ export async function POST(request: NextRequest) {
   // ── Call provider ──────────────────────────────────────────────────────────
   let providerResponse: Response;
   try {
-    if (provider === "anthropic") {
-      providerResponse = await callAnthropic(apiKey, effectiveModelId, llmMessages);
-    } else {
-      providerResponse = await callOpenAICompat(baseUrl, apiKey, effectiveModelId, llmMessages);
-    }
+    providerResponse =
+      provider === "anthropic"
+        ? await callAnthropic(apiKey, effectiveModelId, llmMessages)
+        : await callOpenAICompat(baseUrl, apiKey, effectiveModelId, llmMessages);
   } catch (err) {
-    return NextResponse.json({ error: "Provider API unreachable", detail: String(err) }, { status: 502 });
+    return NextResponse.json(
+      { error: "Provider API unreachable", detail: String(err) },
+      { status: 502 }
+    );
   }
 
   if (!providerResponse.ok) {
@@ -421,8 +434,10 @@ export async function POST(request: NextRequest) {
   // ── Stream + collect ───────────────────────────────────────────────────────
   const encoder = new TextEncoder();
   let assistantContent = "";
-  let promptTokensUsed = 0;
-  let completionTokensUsed = 0;
+  // These will be set from provider's real usage object
+  let actualPromptTokens = 0;
+  let actualCompletionTokens = 0;
+  let usageReceivedFromProvider = false;
   const responseBody = providerResponse.body!;
 
   const stream = new ReadableStream({
@@ -441,8 +456,10 @@ export async function POST(request: NextRequest) {
       try {
         for await (const chunk of parser) {
           if (chunk.usage) {
-            promptTokensUsed = chunk.usage.prompt_tokens;
-            completionTokensUsed = chunk.usage.completion_tokens;
+            // Real provider-reported token counts — use these, not local estimates
+            actualPromptTokens = chunk.usage.prompt_tokens;
+            actualCompletionTokens = chunk.usage.completion_tokens;
+            usageReceivedFromProvider = true;
           }
           if (chunk.delta) {
             assistantContent += chunk.delta;
@@ -457,66 +474,93 @@ export async function POST(request: NextRequest) {
         // stream read error — close gracefully
       }
 
-      // ── Post-stream DB writes ───────────────────────────────────────────
-      const rawAssistantTokens = countTokens(assistantContent);
-      const actualCompletionTokens = completionTokensUsed > 0 ? completionTokensUsed : rawAssistantTokens;
-      const totalTokensThisRequest = (promptTokensUsed > 0 ? promptTokensUsed : compressionResult.compressedTokens) + actualCompletionTokens;
+      // ── Post-stream: use real token counts where available ───────────────
+      // Fallback to local estimate only if provider didn't report usage
+      const finalPromptTokens = usageReceivedFromProvider
+        ? actualPromptTokens
+        : compressionResult.compressedTokens; // local estimate fallback
 
+      const finalCompletionTokens = usageReceivedFromProvider
+        ? actualCompletionTokens
+        : countTokens(assistantContent); // local estimate fallback
+
+      const totalTokensThisRequest = finalPromptTokens + finalCompletionTokens;
+
+      // Savings: original (local estimate) vs actual sent (real provider count)
+      // This is the true cost reduction from compression
+      const inputSavings = computeSavings(
+        compressionResult.rawTokens, // local estimate of original (hypothetical)
+        finalPromptTokens            // real tokens actually sent to provider
+      );
+
+      const costSaved = costKnown
+        ? estimateCost(inputSavings.saved, pricePerMillion)
+        : 0;
+
+      // Persist assistant message with real token counts
       await supabase.from("messages").insert({
         conversation_id: convId!,
         role: "assistant",
         original_content: null,
         compressed_content: assistantContent,
-        raw_tokens: rawAssistantTokens,
-        compressed_tokens: actualCompletionTokens,
-        tokens_saved: 0,
+        raw_tokens: finalCompletionTokens,   // real provider output tokens
+        compressed_tokens: finalCompletionTokens,
+        tokens_saved: inputSavings.saved,
         compression_level: compressionEnabled ? compressionLevel : "none",
         model_id: effectiveModelId,
         key_source: keySource,
       });
 
-      // Savings
-      const inputSavings = computeSavings(compressionResult.rawTokens, compressionResult.compressedTokens);
-      const totalSaved = inputSavings.saved;
-      const costSaved = estimateCost(totalSaved, pricePerMillion);
+      // Update user message's compressed_tokens with real provider prompt tokens
+      if (userMsg?.id && usageReceivedFromProvider) {
+        await supabase
+          .from("messages")
+          .update({ compressed_tokens: finalPromptTokens })
+          .eq("id", userMsg.id);
+      }
 
+      // Log savings
       await supabase.from("usage_logs").insert({
         user_id: user.id,
         conversation_id: convId,
-        tokens_saved: totalSaved,
+        tokens_saved: inputSavings.saved,
         cost_saved_usd: costSaved,
       });
 
-      // Increment platform usage
+      // Increment platform usage with real token count
       if (keySource === "platform") {
         await incrementPlatformUsage(serviceClient, provider, totalTokensThisRequest);
       }
 
-      // Auto-generate title on first message
+      // Auto-title on first message
       if (shouldAutoTitle && message.trim()) {
-        const autoTitle = makeTitle(message);
         await supabase
           .from("conversations")
-          .update({ title: autoTitle })
+          .update({ title: makeTitle(message) })
           .eq("id", convId!)
           .is("title", null);
       }
 
-      // Final stats event
+      // Final stats SSE event
       controller.enqueue(
         encoder.encode(
           `data: ${JSON.stringify({
             type: "stats",
             userMsgId: userMsg?.id,
-            inputRawTokens: compressionResult.rawTokens,
-            inputCompressedTokens: compressionResult.compressedTokens,
+            // Original (hypothetical) — local estimate
+            inputOriginalTokens: compressionResult.rawTokens,
+            // Actual sent — real provider usage (or fallback estimate)
+            inputActualTokens: finalPromptTokens,
             inputTokensSaved: inputSavings.saved,
             inputPctSaved: inputSavings.pctSaved,
-            outputTokens: actualCompletionTokens,
-            totalTokensSaved: totalSaved,
+            // Output — real provider usage (or fallback estimate)
+            outputActualTokens: finalCompletionTokens,
+            totalTokensSaved: inputSavings.saved,
             costSavedUsd: costSaved,
+            costKnown,
             keySource,
-            basis: "inferred",
+            usageFromProvider: usageReceivedFromProvider,
+            basis: usageReceivedFromProvider ? "provider" : "inferred",
           })}\n\n`
         )
       );

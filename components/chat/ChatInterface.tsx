@@ -8,6 +8,22 @@ import CompressionToggle from "./CompressionToggle";
 import ConversationList from "./ConversationList";
 import ModelSelector from "./ModelSelector";
 
+const SEND_TIMEOUT_MS = 60_000; // 60 seconds
+
+export interface MessageStats {
+  inputOriginalTokens: number;   // local estimate — hypothetical "without compression"
+  inputActualTokens: number;     // real provider usage (or fallback estimate)
+  inputTokensSaved: number;
+  inputPctSaved: number;
+  outputActualTokens: number;    // real provider usage (or fallback estimate)
+  totalTokensSaved: number;
+  costSavedUsd: number;
+  costKnown: boolean;
+  keySource?: "platform" | "user" | null;
+  usageFromProvider: boolean;    // true = real counts, false = local estimate fallback
+  basis: "provider" | "inferred";
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -16,17 +32,9 @@ export interface ChatMessage {
   modelId?: string | null;
   modelName?: string | null;
   keySource?: "platform" | "user" | null;
-  stats?: {
-    inputRawTokens: number;
-    inputCompressedTokens: number;
-    inputTokensSaved: number;
-    inputPctSaved: number;
-    outputTokens: number;
-    totalTokensSaved: number;
-    costSavedUsd: number;
-    basis: "inferred";
-  };
+  stats?: MessageStats;
   streaming?: boolean;
+  error?: boolean;
 }
 
 interface Props {
@@ -52,6 +60,7 @@ export default function ChatInterface({ initialCompressionLevel, models, default
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isWaiting, setIsWaiting] = useState(false); // true = sent, waiting for first token
   const [compressionEnabled, setCompressionEnabled] = useState(true);
   const [compressionLevel, setCompressionLevel] = useState<CompressionLevel>(initialCompressionLevel);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -64,17 +73,17 @@ export default function ChatInterface({ initialCompressionLevel, models, default
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Load a conversation's messages from DB
+  // Cleanup timeout on unmount
+  useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); }, []);
+
   async function loadConversation(conv: Conversation) {
-    if (isStreaming) {
-      abortRef.current?.abort();
-      setIsStreaming(false);
-    }
+    if (isStreaming) { abortRef.current?.abort(); setIsStreaming(false); }
     setHistoryLoading(true);
     setConversationId(conv.id);
     setSessionTokensSaved(0);
@@ -95,13 +104,12 @@ export default function ChatInterface({ initialCompressionLevel, models, default
   }
 
   function startNewChat() {
-    if (isStreaming) {
-      abortRef.current?.abort();
-      setIsStreaming(false);
-    }
+    if (isStreaming) { abortRef.current?.abort(); setIsStreaming(false); }
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setMessages([]);
     setConversationId(null);
     setSessionTokensSaved(0);
+    setIsWaiting(false);
     inputRef.current?.focus();
   }
 
@@ -111,12 +119,10 @@ export default function ChatInterface({ initialCompressionLevel, models, default
 
     setInput("");
     setIsStreaming(true);
+    setIsWaiting(true);
 
     const userMsgId = crypto.randomUUID();
-    setMessages((prev) => [
-      ...prev,
-      { id: userMsgId, role: "user", content: text },
-    ]);
+    setMessages((prev) => [...prev, { id: userMsgId, role: "user", content: text }]);
 
     const asstMsgId = crypto.randomUUID();
     setMessages((prev) => [
@@ -125,6 +131,25 @@ export default function ChatInterface({ initialCompressionLevel, models, default
     ]);
 
     abortRef.current = new AbortController();
+
+    // 60-second client-side timeout
+    timeoutRef.current = setTimeout(() => {
+      abortRef.current?.abort();
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === asstMsgId
+            ? {
+                ...m,
+                content: "Request timed out after 60 seconds. The provider may be overloaded — try again.",
+                streaming: false,
+                error: true,
+              }
+            : m
+        )
+      );
+      setIsStreaming(false);
+      setIsWaiting(false);
+    }, SEND_TIMEOUT_MS);
 
     try {
       const res = await fetch("/api/chat", {
@@ -140,22 +165,25 @@ export default function ChatInterface({ initialCompressionLevel, models, default
         signal: abortRef.current.signal,
       });
 
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Request failed" }));
         setMessages((prev) =>
           prev.map((m) =>
             m.id === asstMsgId
-              ? { ...m, content: `Error: ${err.error ?? "Something went wrong"}`, streaming: false }
+              ? { ...m, content: `Error: ${err.error ?? "Something went wrong"}`, streaming: false, error: true }
               : m
           )
         );
         setIsStreaming(false);
+        setIsWaiting(false);
         return;
       }
 
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
-      let assistantText = "";
+      let firstToken = true;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -172,76 +200,79 @@ export default function ChatInterface({ initialCompressionLevel, models, default
           try {
             const parsed = JSON.parse(data);
 
-            if (parsed.type === "meta") {
-              if (parsed.conversationId) {
-                setConversationId(parsed.conversationId);
-                // Refresh conversation list to show new entry
-                setConvRefreshTrigger((n) => n + 1);
-              }
+            if (parsed.type === "meta" && parsed.conversationId) {
+              setConversationId(parsed.conversationId);
+              setConvRefreshTrigger((n) => n + 1);
             }
 
             if (parsed.type === "token" && parsed.delta) {
-              assistantText += parsed.delta;
+              if (firstToken) {
+                setIsWaiting(false); // first token arrived — stop spinner
+                firstToken = false;
+              }
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === asstMsgId ? { ...m, content: assistantText, streaming: true } : m
+                  m.id === asstMsgId
+                    ? { ...m, content: (m.content ?? "") + parsed.delta, streaming: true }
+                    : m
                 )
               );
             }
 
             if (parsed.type === "stats") {
               const modelName = models.find((m) => m.id === selectedModelId)?.display_name ?? null;
+              const stats: MessageStats = {
+                inputOriginalTokens: parsed.inputOriginalTokens ?? parsed.inputRawTokens ?? 0,
+                inputActualTokens: parsed.inputActualTokens ?? parsed.inputCompressedTokens ?? 0,
+                inputTokensSaved: parsed.inputTokensSaved ?? 0,
+                inputPctSaved: parsed.inputPctSaved ?? 0,
+                outputActualTokens: parsed.outputActualTokens ?? parsed.outputTokens ?? 0,
+                totalTokensSaved: parsed.totalTokensSaved ?? 0,
+                costSavedUsd: parsed.costSavedUsd ?? 0,
+                costKnown: parsed.costKnown ?? false,
+                keySource: parsed.keySource ?? null,
+                usageFromProvider: parsed.usageFromProvider ?? false,
+                basis: parsed.basis ?? "inferred",
+              };
               setMessages((prev) =>
                 prev.map((m) => {
-                  if (m.id === asstMsgId) {
-                    return {
-                      ...m,
-                      streaming: false,
-                      stats: { ...parsed },
-                      modelId: selectedModelId,
-                      modelName,
-                      keySource: parsed.keySource ?? null,
-                    };
-                  }
-                  if (m.id === userMsgId) {
-                    return { ...m, originalContent: text, stats: { ...parsed } };
-                  }
+                  if (m.id === asstMsgId) return { ...m, streaming: false, stats, modelId: selectedModelId, modelName, keySource: parsed.keySource ?? null };
+                  if (m.id === userMsgId) return { ...m, originalContent: text, stats };
                   return m;
                 })
               );
               setSessionTokensSaved((prev) => prev + (parsed.totalTokensSaved ?? 0));
-              // Refresh sidebar to show updated_at + auto-generated title
               setConvRefreshTrigger((n) => n + 1);
             }
-          } catch {
-            // Malformed SSE chunk
-          }
+          } catch { /* malformed SSE chunk */ }
         }
       }
     } catch (err: unknown) {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
       if (err instanceof Error && err.name === "AbortError") return;
       setMessages((prev) =>
         prev.map((m) =>
           m.id === asstMsgId
-            ? { ...m, content: "Connection error. Try again.", streaming: false }
+            ? { ...m, content: "Connection error. Try again.", streaming: false, error: true }
             : m
         )
       );
     } finally {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
       setIsStreaming(false);
+      setIsWaiting(false);
     }
   }, [input, isStreaming, conversationId, compressionEnabled, compressionLevel, selectedModelId, models]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   }
+
+  const controlsDisabled = isStreaming;
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Chat history sidebar */}
+      {/* History sidebar */}
       {sidebarOpen && (
         <div className="w-52 shrink-0 flex flex-col border-r border-gray-200 bg-gray-50 overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-200">
@@ -249,7 +280,6 @@ export default function ChatInterface({ initialCompressionLevel, models, default
             <button
               onClick={() => setSidebarOpen(false)}
               className="rounded p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors"
-              title="Hide history"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7M18 19l-7-7 7-7" />
@@ -261,9 +291,7 @@ export default function ChatInterface({ initialCompressionLevel, models, default
               activeId={conversationId}
               onSelect={loadConversation}
               onNew={startNewChat}
-              onDeleted={(id) => {
-                if (conversationId === id) startNewChat();
-              }}
+              onDeleted={(id) => { if (conversationId === id) startNewChat(); }}
               onRenamed={() => {}}
               refreshTrigger={convRefreshTrigger}
             />
@@ -271,7 +299,7 @@ export default function ChatInterface({ initialCompressionLevel, models, default
         </div>
       )}
 
-      {/* Main chat area */}
+      {/* Main chat */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
         <header className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 gap-3">
@@ -280,7 +308,6 @@ export default function ChatInterface({ initialCompressionLevel, models, default
               <button
                 onClick={() => setSidebarOpen(true)}
                 className="rounded-lg p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                title="Show history"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -295,13 +322,12 @@ export default function ChatInterface({ initialCompressionLevel, models, default
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Model selector */}
             {models.length > 0 && (
               <ModelSelector
                 models={models}
                 selectedId={selectedModelId}
                 onChange={setSelectedModelId}
-                disabled={isStreaming}
+                disabled={controlsDisabled}
               />
             )}
             <CompressionToggle
@@ -309,6 +335,7 @@ export default function ChatInterface({ initialCompressionLevel, models, default
               level={compressionLevel}
               onToggle={setCompressionEnabled}
               onLevelChange={setCompressionLevel}
+              disabled={controlsDisabled}
             />
           </div>
         </header>
@@ -336,13 +363,12 @@ export default function ChatInterface({ initialCompressionLevel, models, default
               {messages.map((msg) => (
                 <div key={msg.id} className="message-enter space-y-1">
                   <MessageBubble message={msg} />
-                  {msg.role === "assistant" && msg.stats && !msg.streaming && (
+                  {msg.role === "assistant" && !msg.streaming && !msg.error && msg.stats && (
                     <div className="pl-2">
                       <TokenSavingsBadge stats={msg.stats} />
                     </div>
                   )}
-                  {/* Model label under assistant messages */}
-                  {msg.role === "assistant" && !msg.streaming && (
+                  {msg.role === "assistant" && !msg.streaming && !msg.error && (
                     <div className="pl-2 flex items-center gap-2 flex-wrap">
                       {msg.modelName && (
                         <span className="text-[10px] text-gray-400">{msg.modelName}</span>
@@ -356,6 +382,17 @@ export default function ChatInterface({ initialCompressionLevel, models, default
                   )}
                 </div>
               ))}
+
+              {/* Waiting spinner — shown before first token arrives */}
+              {isWaiting && (
+                <div className="message-enter flex justify-start">
+                  <div className="flex items-center gap-2 rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+                    <span className="logo-spinner text-brand-600 text-lg leading-none">⛏</span>
+                    <span className="text-sm text-gray-400">Thinking…</span>
+                  </div>
+                </div>
+              )}
+
               <div ref={messagesEndRef} />
             </div>
           )}
@@ -381,7 +418,7 @@ export default function ChatInterface({ initialCompressionLevel, models, default
                 disabled={isStreaming}
               />
               <button
-                onClick={isStreaming ? () => abortRef.current?.abort() : sendMessage}
+                onClick={isStreaming ? () => { abortRef.current?.abort(); } : sendMessage}
                 disabled={!isStreaming && !input.trim()}
                 className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                   isStreaming
@@ -393,7 +430,8 @@ export default function ChatInterface({ initialCompressionLevel, models, default
               </button>
             </div>
             <p className="mt-1.5 text-center text-xs text-gray-400">
-              Token counts are <em>inferred</em> estimates, not provider invoices.
+              Actual token counts from provider where available.{" "}
+              <em>Original/baseline counts are inferred estimates.</em>
             </p>
           </div>
         </div>
