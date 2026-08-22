@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import {
@@ -15,7 +15,9 @@ interface Props {
   data: {
     totalTokensSaved: number;
     totalCostSaved: number;
-    messageCount: number;
+    userMessageCount: number;
+    compressedMessageCount: number;
+    avgSavedPerUserMsg: number;
     timeSeries: TimePoint[];
     compressionBreakdown: CompressionBreakdown[];
     modelBreakdown: ModelBreakdown[];
@@ -23,23 +25,15 @@ interface Props {
   };
 }
 
-// ── Theme colours ─────────────────────────────────────────────────────────────
 const ACCENT        = "#22c55e";
 const ACCENT_DIM    = "#14532d";
 const SURFACE       = "#111a14";
 const SURFACE_3     = "#1e2b1f";
 const TEXT_SEC      = "#6b8f72";
-const SUCCESS       = "#4ade80";
-const SUCCESS_BG    = "#0f2d1a";
 
 const CHART_COLORS  = ["#22c55e", "#16a34a", "#15803d", "#166534", "#14532d", "#4ade80", "#86efac", "#bbf7d0"];
 
-const LEVEL_COLORS: Record<string, string> = {
-  lite:  "#4ade80",
-  full:  "#22c55e",
-  ultra: "#16a34a",
-  none:  SURFACE_3,
-};
+const LEVEL_COLORS: Record<string, string> = { lite: "#4ade80", full: "#22c55e", ultra: "#16a34a", none: SURFACE_3 };
 const LEVEL_LABELS: Record<string, string> = { lite: "Lite", full: "Full", ultra: "Ultra", none: "Off" };
 
 const TOOLTIP_STYLE = {
@@ -48,6 +42,7 @@ const TOOLTIP_STYLE = {
 };
 
 function fmt(n: number) { return n.toLocaleString(); }
+
 function relativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -68,17 +63,22 @@ function StatCard({ label, value, sub, accent }: { label: string; value: string;
   );
 }
 
-function EmptyChart() {
+function EmptyChart({ text }: { text?: string }) {
   return (
     <div className="flex h-32 items-center justify-center text-sm text-text-muted">
-      No data yet — send some messages to see stats here.
+      {text ?? "No data yet — send messages to see stats."}
     </div>
   );
 }
 
 export default function DashboardClient({ data }: Props) {
-  const { totalTokensSaved, totalCostSaved, messageCount, timeSeries, compressionBreakdown, modelBreakdown, recentConversations } = data;
-  const avgPerMsg = messageCount > 0 ? Math.round(totalTokensSaved / messageCount) : 0;
+  const {
+    totalTokensSaved, totalCostSaved, userMessageCount, compressedMessageCount,
+    avgSavedPerUserMsg, timeSeries, compressionBreakdown, modelBreakdown, recentConversations,
+  } = data;
+
+  const hasSavings = totalTokensSaved > 0;
+  const hasBreakdowns = compressionBreakdown.length > 0 || modelBreakdown.length > 0;
 
   const pieData = compressionBreakdown.map((d) => ({
     name: LEVEL_LABELS[d.level] ?? d.level,
@@ -96,21 +96,23 @@ export default function DashboardClient({ data }: Props) {
     <div className="h-full overflow-y-auto px-6 py-6 bg-background">
       <div className="mx-auto max-w-5xl space-y-6">
 
-        {/* Title */}
+        {/* Title — savings-focused narrative */}
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Dashboard</h1>
           <p className="mt-1 text-sm text-text-secondary">
-            Lifetime token savings.{" "}
-            <span className="italic text-text-muted">All counts are inferred — offline BPE estimates.</span>
+            {hasSavings
+              ? `You have saved ${fmt(totalTokensSaved)} tokens across ${fmt(userMessageCount)} messages.`
+              : "Send your first message to start tracking savings."}
+            <span className="ml-1 italic text-text-muted">Token counts are BPE estimates.</span>
           </p>
         </div>
 
-        {/* Summary cards */}
+        {/* Summary cards — savings-first */}
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <StatCard label="Tokens saved" value={fmt(totalTokensSaved)} sub="lifetime · inferred" accent />
-          <StatCard label="Est. cost saved" value={`$${totalCostSaved.toFixed(4)}`} sub="inferred · list-price only" />
-          <StatCard label="Messages sent" value={fmt(messageCount)} />
-          <StatCard label="Avg saved / msg" value={fmt(avgPerMsg)} sub="tokens" />
+          <StatCard label="Tokens saved" value={fmt(totalTokensSaved)} sub="lifetime · from input compression" accent />
+          <StatCard label="Est. cost saved" value={`$${totalCostSaved.toFixed(4)}`} sub="list-price estimate" />
+          <StatCard label="Messages compressed" value={fmt(compressedMessageCount)} sub={`of ${fmt(userMessageCount)} total`} />
+          <StatCard label="Avg saved / msg" value={fmt(avgSavedPerUserMsg)} sub="tokens per compressed message" />
         </div>
 
         {/* Time series */}
@@ -121,7 +123,7 @@ export default function DashboardClient({ data }: Props) {
               <AreaChart data={timeSeries}>
                 <defs>
                   <linearGradient id="tokenGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor={ACCENT} stopOpacity={0.25} />
+                    <stop offset="5%" stopColor={ACCENT} stopOpacity={0.25} />
                     <stop offset="95%" stopColor={ACCENT} stopOpacity={0} />
                   </linearGradient>
                 </defs>
@@ -132,10 +134,10 @@ export default function DashboardClient({ data }: Props) {
                 <Area type="monotone" dataKey="tokens_saved" stroke={ACCENT} strokeWidth={2} fill="url(#tokenGrad)" />
               </AreaChart>
             </ResponsiveContainer>
-          ) : <EmptyChart />}
+          ) : <EmptyChart text="Send messages with compression to start seeing savings over time." />}
         </div>
 
-        {/* Compression + Model side by side */}
+        {/* Charts */}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           <div className="card p-5">
             <h2 className="mb-4 text-sm font-semibold text-text-primary">Messages by compression level</h2>
@@ -200,8 +202,9 @@ export default function DashboardClient({ data }: Props) {
 
         {/* Recent conversations */}
         <div className="card overflow-hidden">
-          <div className="border-b border-surface-3 px-5 py-4">
+          <div className="border-b border-surface-3 flex items-center justify-between px-5 py-4">
             <h2 className="text-sm font-semibold text-text-primary">Recent conversations</h2>
+            <Link href="/chat" className="text-xs text-accent hover:underline">Open chat →</Link>
           </div>
           {recentConversations.length > 0 ? (
             <div className="divide-y divide-surface-3">
@@ -220,12 +223,15 @@ export default function DashboardClient({ data }: Props) {
               ))}
             </div>
           ) : (
-            <div className="px-5 py-8 text-center text-sm text-text-muted">No conversations yet</div>
+            <div className="px-5 py-8 text-center text-sm text-text-muted">
+              <p className="mb-2">No conversations yet</p>
+              <Link href="/chat" className="text-accent hover:underline">Start chatting</Link>
+            </div>
           )}
         </div>
 
         <p className="text-center text-xs text-text-muted">
-          Savings are offline BPE estimates (inferred), not provider invoices.
+          Token savings are estimated using BPE encoding. Actual provider costs may vary.
         </p>
       </div>
     </div>
