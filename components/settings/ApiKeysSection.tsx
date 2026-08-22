@@ -12,6 +12,7 @@ const PROVIDERS = [
   { id: "anthropic",  label: "Anthropic",  placeholder: "sk-ant-..." },
   { id: "groq",       label: "Groq",       placeholder: "gsk_..." },
   { id: "openrouter", label: "OpenRouter", placeholder: "sk-or-..." },
+  { id: "nvidia",     label: "NVIDIA NIM",  placeholder: "nvapi-..." },
 ];
 
 export default function ApiKeysSection() {

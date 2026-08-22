@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import ChatInterface from "@/components/chat/ChatInterface";
 
 export default async function ChatPage() {
@@ -51,11 +51,21 @@ export default async function ChatPage() {
     pool[0]?.id ??
     "gpt-4o-mini";
 
+  // Providers the user has saved their own API key for (BYOK) — used to
+  // surface a dedicated group at the top of the model selector.
+  let userKeyProviders: string[] = [];
+  try {
+    const service = createServiceClient();
+    const { data } = await (service as any).rpc("get_user_key_providers", { p_user_id: user!.id });
+    userKeyProviders = ((data ?? []) as { provider: string }[]).map((r) => r.provider);
+  } catch { /* BYOK group simply won't render */ }
+
   return (
     <ChatInterface
       initialCompressionLevel={compressionLevel}
       models={models}
       defaultModelId={defaultModelId}
+      userKeyProviders={userKeyProviders}
     />
   );
 }

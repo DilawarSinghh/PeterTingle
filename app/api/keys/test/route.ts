@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { Provider } from "@/types/database";
 
-const VALID_PROVIDERS: Provider[] = ["openai", "anthropic", "groq", "openrouter"];
+const VALID_PROVIDERS: Provider[] = ["openai", "anthropic", "groq", "openrouter", "nvidia"];
 
 async function testOpenAICompat(baseUrl: string, apiKey: string): Promise<{ valid: boolean; error?: string }> {
   try {
@@ -35,7 +35,7 @@ async function testAnthropic(apiKey: string): Promise<{ valid: boolean; error?: 
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-3-5",
+        model: "claude-3-5-haiku-20241022",
         max_tokens: 1,
         messages: [{ role: "user", content: "hi" }],
       }),
@@ -53,6 +53,7 @@ const PROVIDER_BASE_URLS: Record<string, string> = {
   openai: "https://api.openai.com/v1",
   groq: "https://api.groq.com/openai/v1",
   openrouter: "https://openrouter.ai/api/v1",
+  nvidia: "https://integrate.api.nvidia.com/v1",
 };
 
 export async function POST(request: NextRequest) {

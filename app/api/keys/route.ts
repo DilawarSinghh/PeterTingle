@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { Provider } from "@/types/database";
 
-const VALID_PROVIDERS: Provider[] = ["openai", "anthropic", "groq", "openrouter"];
+const VALID_PROVIDERS: Provider[] = ["openai", "anthropic", "groq", "openrouter", "nvidia"];
 
 export async function GET() {
   const supabase = await createClient();

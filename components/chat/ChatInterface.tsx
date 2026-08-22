@@ -41,6 +41,7 @@ interface Props {
   initialCompressionLevel: CompressionLevel;
   models: Model[];
   defaultModelId: string;
+  userKeyProviders?: string[];
 }
 
 const STARTER_PROMPTS = [
@@ -50,7 +51,7 @@ const STARTER_PROMPTS = [
   "Debug: why might a fetch stream stall without an error?",
 ];
 
-export default function ChatInterface({ initialCompressionLevel, models, defaultModelId }: Props) {
+export default function ChatInterface({ initialCompressionLevel, models, defaultModelId, userKeyProviders = [] }: Props) {
   const {
     conversationId, messages, setMessages, setConversationId, isStreaming, setIsStreaming,
     historyLoading, bumpRefresh, abortRef,
@@ -207,7 +208,7 @@ export default function ChatInterface({ initialCompressionLevel, models, default
           )}
         </div>
         <div className="flex items-center gap-3">
-          <ModelSelector models={models} selectedId={selectedModelId} onChange={setSelectedModelId} disabled={isStreaming} />
+          <ModelSelector models={models} selectedId={selectedModelId} onChange={setSelectedModelId} disabled={isStreaming} userKeyProviders={userKeyProviders} />
 
 
           <CompressionToggle enabled={compressionEnabled} level={compressionLevel} onToggle={setCompressionEnabled} onLevelChange={setCompressionLevel} disabled={isStreaming} />

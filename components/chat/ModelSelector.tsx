@@ -8,6 +8,8 @@ interface Props {
   selectedId: string;
   onChange: (modelId: string) => void;
   disabled?: boolean;
+  /** Providers the user has saved their own API key for - shown in a dedicated top group. */
+  userKeyProviders?: string[];
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -20,7 +22,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 const PROVIDER_ORDER = ["openai", "anthropic", "groq", "nvidia", "openrouter"];
 
-export default function ModelSelector({ models, selectedId, onChange, disabled }: Props) {
+export default function ModelSelector({ models, selectedId, onChange, disabled, userKeyProviders = [] }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -61,17 +63,25 @@ export default function ModelSelector({ models, selectedId, onChange, disabled }
         )
       : models;
 
-    const byProvider = filtered.reduce<Record<string, Model[]>>((acc, m) => {
+    const byokSet = new Set(userKeyProviders);
+    const byokModels = filtered.filter((m) => byokSet.has(m.provider));
+    const rest = filtered.filter((m) => !byokSet.has(m.provider));
+
+    const byProvider = rest.reduce<Record<string, Model[]>>((acc, m) => {
       (acc[m.provider] ??= []).push(m);
       return acc;
     }, {});
 
-    return Object.entries(byProvider).sort(
+    const providerGroups = Object.entries(byProvider).sort(
       ([a], [b]) =>
         (PROVIDER_ORDER.indexOf(a) === -1 ? 99 : PROVIDER_ORDER.indexOf(a)) -
         (PROVIDER_ORDER.indexOf(b) === -1 ? 99 : PROVIDER_ORDER.indexOf(b))
     );
-  }, [models, query]);
+
+    return byokModels.length > 0
+      ? ([['__byok__', byokModels], ...providerGroups] as [string, Model[]][])
+      : providerGroups;
+  }, [models, query, userKeyProviders]);
 
   if (!models.length) {
     return (
@@ -131,7 +141,11 @@ export default function ModelSelector({ models, selectedId, onChange, disabled }
             {groups.map(([provider, providerModels]) => (
               <div key={provider}>
                 <div className="sticky top-0 border-b border-surface-3 bg-surface-2/95 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted backdrop-blur">
-                  {PROVIDER_LABELS[provider] ?? provider}
+                  {provider === '__byok__' ? (
+                    <span className='text-accent'>Using your API key</span>
+                  ) : (
+                    PROVIDER_LABELS[provider] ?? provider
+                  )}
                   <span className="ml-1.5 font-normal normal-case">({providerModels.length})</span>
                 </div>
                 {providerModels.map((m) => (
