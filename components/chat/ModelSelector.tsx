@@ -141,8 +141,8 @@ export default function ModelSelector({ models, selectedId, onChange, disabled, 
             {groups.map(([provider, providerModels]) => (
               <div key={provider}>
                 <div className="sticky top-0 border-b border-surface-3 bg-surface-2/95 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted backdrop-blur">
-                  {provider === '__byok__' ? (
-                    <span className='text-accent'>Using your API key</span>
+                  {provider === "__byok__" ? (
+                    <span className="text-accent">🔑 Your API keys</span>
                   ) : (
                     PROVIDER_LABELS[provider] ?? provider
                   )}
