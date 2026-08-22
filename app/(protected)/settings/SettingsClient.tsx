@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { CompressionLevel } from "@/types/database";
 import ApiKeysSection from "@/components/settings/ApiKeysSection";
+import NfcCardSection from "@/components/settings/NfcCardSection";
 
 interface Props {
   initialProfile: {
@@ -117,6 +118,9 @@ export default function SettingsClient({ initialProfile }: Props) {
 
         {/* API Keys */}
         <ApiKeysSection />
+
+        {/* NFC sign-in cards */}
+        <NfcCardSection />
 
         {/* Danger zone */}
         <section className="rounded-xl border border-error bg-error-bg p-4 space-y-4 sm:p-6">

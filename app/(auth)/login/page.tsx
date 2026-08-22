@@ -1,10 +1,11 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import LoadingScreen from "@/components/ui/LoadingScreen";
+import { isNFCSupported, scanNFCTag } from "@/lib/nfc";
 
 function LoginForm() {
   const router = useRouter();
@@ -14,6 +15,9 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [nfcSupported, setNfcSupported] = useState(false);
+  const [nfcScanning, setNfcScanning] = useState(false);
+  const [nfcError, setNfcError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(
     searchParams.get("error") === "auth_callback_failed"
       ? "OAuth sign-in failed. Try again."
@@ -21,6 +25,48 @@ function LoginForm() {
   );
 
   const supabase = createClient();
+
+  useEffect(() => {
+    setNfcSupported(isNFCSupported());
+  }, []);
+
+  async function handleNfcLogin() {
+    setNfcScanning(true);
+    setNfcError(null);
+    try {
+      // 1. Scan the card
+      const tagId = await scanNFCTag();
+
+      // 2. Exchange it for a one-time token (server mints the session)
+      const res = await fetch("/api/auth/nfc-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nfc_tag_id: tagId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNfcError(data.error ?? "Sign-in failed. Try again.");
+        return;
+      }
+
+      // 3. Redeem the token client-side — establishes a normal session
+      const { error: otpError } = await supabase.auth.verifyOtp({
+        type: "magiclink",
+        token_hash: data.token,
+      });
+      if (otpError) {
+        setNfcError("Sign-in failed: " + otpError.message);
+        return;
+      }
+
+      router.push(next);
+      router.refresh();
+    } catch (e) {
+      setNfcError(e instanceof Error ? e.message : "Scan failed.");
+    } finally {
+      setNfcScanning(false);
+    }
+  }
 
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -74,6 +120,30 @@ function LoginForm() {
           </svg>
           Continue with Google
         </button>
+
+        {/* NFC tap-to-sign-in (only where Web NFC is supported) */}
+        {nfcSupported && (
+          <>
+            <button onClick={handleNfcLogin} disabled={nfcScanning || loading} className="btn-secondary w-full gap-2">
+              {nfcScanning ? (
+                <>
+                  <span className="logo-spinner text-base leading-none text-accent">⛏</span>
+                  Hold your card to the back of your phone…
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 8a12 12 0 010 8M9.5 6a16 16 0 010 12M14 4a20 20 0 010 16M18.5 2a24 24 0 010 20" />
+                  </svg>
+                  Tap to sign in
+                </>
+              )}
+            </button>
+            {nfcError && (
+              <p className="text-xs font-medium text-error">{nfcError}</p>
+            )}
+          </>
+        )}
 
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
