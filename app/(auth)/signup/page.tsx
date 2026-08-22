@@ -57,28 +57,35 @@ export default function SignupPage() {
 
   if (confirmSent) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <div className="w-full max-w-sm space-y-4 text-center">
-          <div className="text-4xl">📬</div>
-          <h2 className="text-xl font-semibold text-text-primary">Check your email</h2>
-          <p className="text-sm text-text-secondary">
+      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4">
+        <div className="grid-bg absolute inset-0" aria-hidden="true" />
+        <div className="glow-orb animate-float absolute -top-32 left-1/2 h-[400px] w-[600px] -translate-x-1/2" aria-hidden="true" />
+        <div className="card animate-fade-up relative w-full max-w-sm space-y-4 p-8 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-accent-muted/40 bg-accent-dim/60 text-3xl">📬</div>
+          <h2 className="text-xl font-bold tracking-tight text-text-primary">Check your email</h2>
+          <p className="text-sm leading-relaxed text-text-secondary">
             We sent a confirmation link to <strong className="text-text-primary">{email}</strong>. Click it to activate your account.
           </p>
-          <Link href="/login" className="text-sm text-accent hover:text-accent-hover">Back to sign in</Link>
+          <Link href="/login" className="btn-ghost text-sm text-accent hover:text-accent-hover">Back to sign in</Link>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm space-y-6">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-12">
+      <div className="grid-bg absolute inset-0" aria-hidden="true" />
+      <div className="glow-orb animate-float absolute -top-32 left-1/2 h-[400px] w-[600px] -translate-x-1/2" aria-hidden="true" />
+      <div className="card animate-fade-up relative w-full max-w-sm space-y-6 p-8">
         <div className="text-center">
-          <Link href="/" className="inline-block">
-            <span className="text-2xl font-bold text-accent">⛏ TokenSaver</span>
+          <Link href="/" className="inline-flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-teal-500 text-base font-black text-[#04110b] shadow-[0_4px_16px_-4px_rgba(52,211,153,0.6)]">
+              ⛏
+            </span>
+            <span className="text-lg font-bold tracking-tight text-text-primary">TokenSaver</span>
           </Link>
-          <h1 className="mt-4 text-xl font-semibold text-text-primary">Create account</h1>
-          <p className="mt-1 text-sm text-text-secondary">Start saving tokens today</p>
+          <h1 className="mt-6 text-2xl font-bold tracking-tight text-text-primary">Create account</h1>
+          <p className="mt-1.5 text-sm text-text-secondary">Start saving tokens today</p>
         </div>
 
         {error && (
@@ -100,7 +107,7 @@ export default function SignupPage() {
             <div className="w-full border-t border-surface-3" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-background px-2 text-text-muted">or email</span>
+            <span className="bg-surface px-2 text-text-muted">or email</span>
           </div>
         </div>
 

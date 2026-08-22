@@ -11,22 +11,22 @@ const config: Config = {
     extend: {
       // ── Design token palette ───────────────────────────────────────────────
       colors: {
-        // Base backgrounds — dark charcoal, not pure black
-        background: "#0a0f0d",      // page background
-        surface: "#111a14",         // sidebar, cards, elevated elements
-        "surface-2": "#172019",     // slightly lighter: input bg, hover states
-        "surface-3": "#1e2b1f",     // borders, separators
+        // Base backgrounds — deep charcoal with a cool green undertone
+        background: "#06090a",      // page background
+        surface: "#0b1210",         // sidebar, cards, elevated elements
+        "surface-2": "#101a15",     // slightly lighter: input bg, hover states
+        "surface-3": "#1a271f",     // borders, separators
 
-        // Accent — muted forest green (not neon)
-        accent: "#22c55e",          // primary CTAs, active states
-        "accent-hover": "#16a34a",  // hover on accent
-        "accent-muted": "#166534",  // subtle accent backgrounds
-        "accent-dim": "#14532d",    // very subtle: badge bg, borders
+        // Accent — modern emerald (brighter, more premium)
+        accent: "#34d399",          // primary CTAs, active states
+        "accent-hover": "#6ee7b7",  // hover on accent
+        "accent-muted": "#065f46",  // subtle accent backgrounds
+        "accent-dim": "#052e22",    // very subtle: badge bg, borders
 
         // Text
-        "text-primary": "#e8f5e9",  // off-white with slight green tint
-        "text-secondary": "#6b8f72", // muted green-gray for meta, timestamps
-        "text-muted": "#4a6b50",    // even more muted: placeholder text
+        "text-primary": "#f2f7f4",  // near-white, crisp
+        "text-secondary": "#8ba897",// muted sage for meta, timestamps
+        "text-muted": "#55705f",    // even more muted: placeholder text
 
         // Status colours — kept semantic
         error: "#f87171",
@@ -38,28 +38,28 @@ const config: Config = {
 
         // Keep a `brand` alias pointing to accent for any leftovers
         brand: {
-          50:  "#f0fdf4",
-          100: "#dcfce7",
-          200: "#bbf7d0",
-          300: "#86efac",
-          400: "#4ade80",
-          500: "#22c55e",
-          600: "#16a34a",
-          700: "#15803d",
-          800: "#166534",
-          900: "#14532d",
+          50:  "#ecfdf5",
+          100: "#d1fae5",
+          200: "#a7f3d0",
+          300: "#6ee7b7",
+          400: "#34d399",
+          500: "#10b981",
+          600: "#059669",
+          700: "#047857",
+          800: "#065f46",
+          900: "#064e3b",
         },
       },
 
       // ── Border radius — one consistent scale ──────────────────────────────
       borderRadius: {
         none: "0",
-        sm:   "4px",
-        DEFAULT: "6px",
-        md:   "8px",
-        lg:   "10px",
-        xl:   "12px",
-        "2xl": "16px",
+        sm:   "6px",
+        DEFAULT: "8px",
+        md:   "10px",
+        lg:   "14px",
+        xl:   "18px",
+        "2xl": "24px",
         full: "9999px",
       },
 

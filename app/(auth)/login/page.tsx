@@ -42,15 +42,20 @@ function LoginForm() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm space-y-6">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-12">
+      <div className="grid-bg absolute inset-0" aria-hidden="true" />
+      <div className="glow-orb animate-float absolute -top-32 left-1/2 h-[400px] w-[600px] -translate-x-1/2" aria-hidden="true" />
+      <div className="card animate-fade-up relative w-full max-w-sm space-y-6 p-8">
         {/* Logo */}
         <div className="text-center">
-          <Link href="/" className="inline-block">
-            <span className="text-2xl font-bold text-accent">⛏ TokenSaver</span>
+          <Link href="/" className="inline-flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-teal-500 text-base font-black text-[#04110b] shadow-[0_4px_16px_-4px_rgba(52,211,153,0.6)]">
+              ⛏
+            </span>
+            <span className="text-lg font-bold tracking-tight text-text-primary">TokenSaver</span>
           </Link>
-          <h1 className="mt-4 text-xl font-semibold text-text-primary">Sign in</h1>
-          <p className="mt-1 text-sm text-text-secondary">Welcome back</p>
+          <h1 className="mt-6 text-2xl font-bold tracking-tight text-text-primary">Welcome back</h1>
+          <p className="mt-1.5 text-sm text-text-secondary">Sign in to keep saving tokens</p>
         </div>
 
         {error && (
@@ -75,7 +80,7 @@ function LoginForm() {
             <div className="w-full border-t border-surface-3" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-background px-2 text-text-muted">or email</span>
+            <span className="bg-surface px-2 text-text-muted">or email</span>
           </div>
         </div>
 
