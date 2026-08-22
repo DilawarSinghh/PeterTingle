@@ -73,7 +73,18 @@ export default function ModelSelector({ models, selectedId, onChange, disabled }
     );
   }, [models, query]);
 
-  if (!models.length) return null;
+  if (!models.length) {
+    return (
+      <button
+        disabled
+        title="No active models found in the database — run the model sync script"
+        className="flex items-center gap-2 rounded-lg border border-surface-3 bg-surface px-3 py-1.5 text-xs font-medium text-text-muted opacity-60 cursor-not-allowed"
+      >
+        <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-text-muted" />
+        No models available
+      </button>
+    );
+  }
 
   return (
     <div ref={ref} className="relative">

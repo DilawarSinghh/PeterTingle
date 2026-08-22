@@ -24,6 +24,10 @@ export default async function ChatPage() {
   const compressionLevel = profileRes.data?.compression_level ?? "full";
   const models = modelsRes.data ?? [];
 
+  if (modelsRes.error) {
+    console.error("[chat] failed to load models:", modelsRes.error.message);
+  }
+
   // Default to a model whose provider actually has a working platform key,
   // so the first message never fails with "No API key configured".
   const validKey = (k: string | undefined) =>

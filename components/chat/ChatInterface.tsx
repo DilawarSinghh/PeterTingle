@@ -207,9 +207,9 @@ export default function ChatInterface({ initialCompressionLevel, models, default
           )}
         </div>
         <div className="flex items-center gap-3">
-          {models.length > 0 && (
-            <ModelSelector models={models} selectedId={selectedModelId} onChange={setSelectedModelId} disabled={isStreaming} />
-          )}
+          <ModelSelector models={models} selectedId={selectedModelId} onChange={setSelectedModelId} disabled={isStreaming} />
+
+
           <CompressionToggle enabled={compressionEnabled} level={compressionLevel} onToggle={setCompressionEnabled} onLevelChange={setCompressionLevel} disabled={isStreaming} />
         </div>
       </header>
