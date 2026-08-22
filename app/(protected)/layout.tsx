@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Sidebar from "@/components/ui/Sidebar";
+import ChatProvider from "@/components/providers/ChatProvider";
 
 export default async function ProtectedLayout({
   children,
@@ -27,18 +28,20 @@ export default async function ProtectedLayout({
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar
-        user={{
-          email: user.email ?? "",
-          displayName:
-            profile?.display_name ??
-            user.user_metadata?.full_name ??
-            user.email?.split("@")[0] ??
-            "User",
-        }}
-      />
-      <main className="flex-1 overflow-hidden">{children}</main>
-    </div>
+    <ChatProvider>
+      <div className="flex h-screen overflow-hidden bg-background">
+        <Sidebar
+          user={{
+            email: user.email ?? "",
+            displayName:
+              profile?.display_name ??
+              user.user_metadata?.full_name ??
+              user.email?.split("@")[0] ??
+              "User",
+          }}
+        />
+        <main className="flex-1 overflow-hidden">{children}</main>
+      </div>
+    </ChatProvider>
   );
 }

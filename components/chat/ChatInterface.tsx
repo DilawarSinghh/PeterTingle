@@ -1,11 +1,11 @@
 ﻿"use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import type { CompressionLevel, Model, Conversation, Message } from "@/types/database";
+import type { CompressionLevel, Model } from "@/types/database";
+import { useChat } from "@/components/providers/ChatProvider";
 import MessageBubble from "./MessageBubble";
 import TokenSavingsBadge from "./TokenSavingsBadge";
 import CompressionToggle from "./CompressionToggle";
-import ConversationList from "./ConversationList";
 import ModelSelector from "./ModelSelector";
 
 const SEND_TIMEOUT_MS = 60_000;
@@ -44,52 +44,43 @@ interface Props {
 }
 
 const STARTER_PROMPTS = [
-  { label: "Explain a concept", text: "Explain how token compression reduces LLM API costs, simply." },
-  { label: "Write something", text: "Write a short product tagline for a tool that saves LLM tokens." },
-  { label: "Compare models", text: "What are the tradeoffs between small and large language models?" },
-  { label: "Debug code", text: "Why might a fetch stream stall without an error in the browser?" },
+  "Explain how token compression reduces LLM API costs",
+  "Write a short tagline for an AI token-saver app",
+  "What are the tradeoffs between small and large language models?",
+  "Debug: why might a fetch stream stall without an error?",
 ];
 
-function dbMessageToChatMessage(m: Message, models: Model[]): ChatMessage {
-  const modelName = models.find((mod) => mod.id === m.model_id)?.display_name ?? null;
-  return {
-    id: m.id,
-    role: m.role,
-    content: (m.compressed_content ?? m.original_content) ?? "",
-    originalContent: m.original_content ?? undefined,
-    modelId: m.model_id,
-    modelName,
-    keySource: m.key_source,
-  };
-}
-
 export default function ChatInterface({ initialCompressionLevel, models, defaultModelId }: Props) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const {
+    conversationId, messages, setMessages, setConversationId, isStreaming, setIsStreaming,
+    historyLoading, bumpRefresh, abortRef, toggleSidebar,
+  } = useChat();
+
   const [input, setInput] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
   const [isWaiting, setIsWaiting] = useState(false);
   const [compressionEnabled, setCompressionEnabled] = useState(true);
   const [compressionLevel, setCompressionLevel] = useState<CompressionLevel>(initialCompressionLevel);
-  const [conversationId, setConversationId] = useState<string | null>(null);
   const [sessionTokensSaved, setSessionTokensSaved] = useState(0);
   const [selectedModelId, setSelectedModelId] = useState(defaultModelId);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [convRefreshTrigger, setConvRefreshTrigger] = useState(0);
-  const [historyLoading, setHistoryLoading] = useState(false);
   const [stickToBottom, setStickToBottom] = useState(true);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Only auto-scroll when user is already near the bottom
   useEffect(() => {
     if (stickToBottom) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, stickToBottom]);
 
   useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); }, []);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  }, [input]);
 
   function handleScroll() {
     const el = scrollContainerRef.current;
@@ -97,43 +88,11 @@ export default function ChatInterface({ initialCompressionLevel, models, default
     setStickToBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
   }
 
-  // Auto-resize textarea up to ~8 lines
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 128) + "px";
-  }, [input]);
-
-  async function loadConversation(conv: Conversation) {
-    if (isStreaming) { abortRef.current?.abort(); setIsStreaming(false); }
-    setHistoryLoading(true);
-    setConversationId(conv.id);
-    setSessionTokensSaved(0);
-    setStickToBottom(true);
-    if (conv.default_model_id) setSelectedModelId(conv.default_model_id);
-    try {
-      const res = await fetch(`/api/conversations/${conv.id}/messages`);
-      const data = await res.json();
-      setMessages((data.messages ?? []).map((m: Message) => dbMessageToChatMessage(m, models)));
-    } catch { setMessages([]); }
-    finally { setHistoryLoading(false); }
-  }
-
-  function startNewChat() {
-    if (isStreaming) { abortRef.current?.abort(); setIsStreaming(false); }
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    setMessages([]); setConversationId(null); setSessionTokensSaved(0); setIsWaiting(false);
-    setStickToBottom(true);
-    inputRef.current?.focus();
-  }
-
   const sendMessage = useCallback(async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
     if (!text || isStreaming) return;
 
-    setInput(""); setIsStreaming(true); setIsWaiting(true);
-    setStickToBottom(true);
+    setInput(""); setIsStreaming(true); setIsWaiting(true); setStickToBottom(true);
 
     const userMsgId = crypto.randomUUID();
     setMessages((prev) => [...prev, { id: userMsgId, role: "user", content: text }]);
@@ -188,7 +147,7 @@ export default function ChatInterface({ initialCompressionLevel, models, default
             const parsed = JSON.parse(data);
             if (parsed.type === "meta" && parsed.conversationId) {
               setConversationId(parsed.conversationId);
-              setConvRefreshTrigger((n) => n + 1);
+              bumpRefresh();
             }
             if (parsed.type === "token" && parsed.delta) {
               if (firstToken) { setIsWaiting(false); firstToken = false; }
@@ -217,7 +176,7 @@ export default function ChatInterface({ initialCompressionLevel, models, default
                 return m;
               }));
               setSessionTokensSaved((prev) => prev + (parsed.totalTokensSaved ?? 0));
-              setConvRefreshTrigger((n) => n + 1);
+              bumpRefresh();
             }
           } catch { /* malformed SSE */ }
         }
@@ -232,130 +191,72 @@ export default function ChatInterface({ initialCompressionLevel, models, default
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       setIsStreaming(false); setIsWaiting(false);
     }
-  }, [input, isStreaming, conversationId, compressionEnabled, compressionLevel, selectedModelId, models]);
+  }, [input, isStreaming, conversationId, compressionEnabled, compressionLevel, selectedModelId, models, setMessages, setConversationId, bumpRefresh, abortRef]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   }
 
-  const selectedModel = models.find((m) => m.id === selectedModelId);
-
   return (
-    <div className="flex h-full overflow-hidden bg-background">
-      {/* History sidebar */}
-      {sidebarOpen && (
-        <div className="w-60 shrink-0 flex flex-col border-r border-surface-3 bg-surface overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2.5 border-b border-surface-3">
-            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">History</span>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              title="Hide history"
-              className="rounded p-1 text-text-muted hover:text-text-primary hover:bg-surface-2 transition-colors"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7M18 19l-7-7 7-7" />
-              </svg>
-            </button>
-          </div>
-          <div className="flex-1 min-h-0 overflow-hidden py-2">
-            <ConversationList
-              activeId={conversationId}
-              onSelect={loadConversation}
-              onNew={startNewChat}
-              onDeleted={(id) => { if (conversationId === id) startNewChat(); }}
-              onRenamed={() => {}}
-              refreshTrigger={convRefreshTrigger}
-            />
-          </div>
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+      {/* Header */}
+      <button onClick={toggleSidebar} className="mr-3 rounded-lg p-2 text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary sm:hidden"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></button><header className="flex h-14 shrink-0 items-center justify-between border-b border-surface-3 bg-background px-4">
+        <div className="flex items-center gap-2">
+          {sessionTokensSaved > 0 && (
+            <span className="savings-badge hidden sm:inline-flex">⛏ {sessionTokensSaved.toLocaleString()} saved</span>
+          )}
         </div>
-      )}
+        <div className="flex items-center gap-3">
+          {models.length > 0 && (
+            <ModelSelector models={models} selectedId={selectedModelId} onChange={setSelectedModelId} disabled={isStreaming} />
+          )}
+          <CompressionToggle enabled={compressionEnabled} level={compressionLevel} onToggle={setCompressionEnabled} onLevelChange={setCompressionLevel} disabled={isStreaming} />
+        </div>
+      </header>
 
-      {/* Main */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Header */}
-        <header className="flex items-center justify-between gap-3 border-b border-surface-3 bg-surface/80 px-4 py-2.5 backdrop-blur">
-          <div className="flex min-w-0 items-center gap-2">
-            {!sidebarOpen && (
-              <button
-                onClick={() => setSidebarOpen(true)}
-                title="Show history"
-                className="rounded-md p-1.5 text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-            )}
-            {sessionTokensSaved > 0 && (
-              <span className="savings-badge hidden sm:inline-flex" title="Tokens saved this session">
-                ⛏ {sessionTokensSaved.toLocaleString()} tokens saved
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {models.length > 0 && (
-              <ModelSelector models={models} selectedId={selectedModelId} onChange={setSelectedModelId} disabled={isStreaming} />
-            )}
-            <CompressionToggle enabled={compressionEnabled} level={compressionLevel} onToggle={setCompressionEnabled} onLevelChange={setCompressionLevel} disabled={isStreaming} />
-          </div>
-        </header>
-
-        {/* Messages */}
-        <div ref={scrollContainerRef} onScroll={handleScroll} className="chat-scroll flex-1 overflow-y-auto px-4 py-6">
+      {/* Messages */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="chat-scroll flex-1 overflow-y-auto"
+      >
+        <div className="mx-auto w-full max-w-3xl px-4 pb-32 pt-6">
           {historyLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="flex items-center gap-2 text-sm text-text-secondary">
-                <span className="logo-spinner text-accent">⛏</span> Loading messages…
-              </div>
+            <div className="flex h-full min-h-[40vh] items-center justify-center">
+              <div className="text-sm text-text-secondary">Loading messages…</div>
             </div>
           ) : messages.length === 0 ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="w-full max-w-lg text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-accent-muted bg-accent-dim text-2xl text-accent shadow-accent-glow">
-                  ⛏
-                </div>
-                <h2 className="mt-4 text-xl font-semibold text-text-primary">
-                  Start a conversation
-                </h2>
-                <p className="mt-1.5 text-sm text-text-secondary">
-                  {compressionEnabled
-                    ? `Compression on · ${compressionLevel} mode — filler words are stripped before sending, so you pay for fewer tokens.`
-                    : "Compression off. Messages are sent unmodified."}
-                </p>
-                {selectedModel && (
-                  <p className="mt-1 text-xs text-text-muted">
-                    Using <span className="text-accent">{selectedModel.display_name}</span>
-                  </p>
-                )}
-                <div className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {STARTER_PROMPTS.map((s) => (
-                    <button
-                      key={s.label}
-                      onClick={() => sendMessage(s.text)}
-                      disabled={isStreaming}
-                      className="card card-hover px-4 py-3 text-left disabled:opacity-40"
-                    >
-                      <p className="text-sm font-medium text-text-primary">{s.label}</p>
-                      <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">{s.text}</p>
-                    </button>
-                  ))}
-                </div>
+            <div className="flex min-h-[50vh] flex-col items-center justify-center text-center">
+              <h1 className="text-3xl font-semibold text-text-primary">What can I help with?</h1>
+              <div className="mt-8 grid w-full max-w-lg gap-3 sm:grid-cols-2">
+                {STARTER_PROMPTS.map((prompt, i) => (
+                  <button
+                    key={i}
+                    onClick={() => sendMessage(prompt)}
+                    disabled={isStreaming}
+                    className="rounded-xl border border-surface-3 bg-surface p-4 text-left text-sm text-text-secondary transition-colors hover:border-accent-muted hover:bg-surface-2 hover:text-text-primary"
+                  >
+                    {prompt}
+                  </button>
+                ))}
               </div>
             </div>
           ) : (
-            <div className="mx-auto max-w-3xl space-y-6">
+            <div className="space-y-6">
               {messages.map((msg) => (
-                <div key={msg.id} className="message-enter space-y-1">
+                <div key={msg.id} className="message-enter">
                   <MessageBubble message={msg} />
                   {msg.role === "assistant" && !msg.streaming && !msg.error && msg.stats && (
-                    <div className="pl-2"><TokenSavingsBadge stats={msg.stats} /></div>
+                    <div className="mt-1 pl-1">
+                      <TokenSavingsBadge stats={msg.stats} />
+                    </div>
                   )}
                   {msg.role === "assistant" && !msg.streaming && !msg.error && (
-                    <div className="pl-2 flex items-center gap-2 flex-wrap">
-                      {msg.modelName && <span className="text-[10px] text-text-muted">{msg.modelName}</span>}
+                    <div className="mt-1 flex items-center gap-2 pl-1">
+                      {msg.modelName && <span className="text-[11px] text-text-muted">{msg.modelName}</span>}
                       {msg.keySource === "user" && (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-warning bg-warning-bg rounded-full px-2 py-0.5">
-                          🔑 via your API key
+                        <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg px-2 py-0.5 text-[10px] text-warning">
+                          🔑 via your key
                         </span>
                       )}
                     </div>
@@ -364,8 +265,8 @@ export default function ChatInterface({ initialCompressionLevel, models, default
               ))}
 
               {isWaiting && (
-                <div className="message-enter flex justify-start">
-                  <div className="flex items-center gap-2 rounded-xl border border-surface-3 bg-surface px-4 py-3">
+                <div className="flex justify-start">
+                  <div className="flex items-center gap-2 rounded-lg border border-surface-3 bg-surface px-4 py-3">
                     <span className="logo-spinner text-accent text-lg leading-none">⛏</span>
                     <span className="text-sm text-text-secondary">Thinking…</span>
                   </div>
@@ -375,51 +276,48 @@ export default function ChatInterface({ initialCompressionLevel, models, default
             </div>
           )}
         </div>
+      </div>
 
-        {/* Input */}
-        <div className="border-t border-surface-3 bg-surface/80 px-4 py-3.5 backdrop-blur">
-          <div className="mx-auto max-w-3xl">
-            <div className="flex items-end gap-2 rounded-2xl border border-surface-3 bg-surface-2 px-3 py-2 shadow-sm transition-all focus-within:border-accent-muted focus-within:shadow-accent-glow">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={compressionEnabled ? "Message — filler stripped automatically…" : "Type your message…"}
-                rows={1}
-                className="flex-1 resize-none bg-transparent py-1.5 text-sm text-text-primary outline-none placeholder:text-text-muted"
-                style={{ maxHeight: "8rem" }}
-                disabled={isStreaming}
-              />
-              <button
-                onClick={isStreaming ? () => abortRef.current?.abort() : () => sendMessage()}
-                disabled={!isStreaming && !input.trim()}
-                title={isStreaming ? "Stop generating" : "Send (Enter)"}
-                className={"flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all " + (
-                  isStreaming
-                    ? "bg-error-bg text-error hover:bg-red-900"
-                    : "bg-accent text-background hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed"
-                )}
-              >
-                {isStreaming ? (
-                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M13 6l6 6-6 6" />
-                  </svg>
-                )}
-              </button>
-            </div>
-            <div className="mt-1.5 flex items-center justify-between text-[11px] text-text-muted">
-              <span>Enter to send · Shift+Enter for newline</span>
-              <span>
-                Actual counts from provider where available.{" "}
-                <em>Baselines are estimates.</em>
-              </span>
-            </div>
+      {/* Input */}
+      <div className="fixed bottom-0 left-0 right-0 border-t border-surface-3 bg-background/80 px-4 py-4 backdrop-blur sm:left-64">
+        <div className="mx-auto max-w-3xl">
+          <div className="relative flex items-end gap-2 rounded-2xl border border-surface-3 bg-surface px-4 py-3 shadow-sm transition-all focus-within:border-accent-muted focus-within:shadow-accent-glow">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Message TokenSaver…"
+              rows={1}
+              className="max-h-40 flex-1 resize-none bg-transparent py-1 text-base leading-relaxed text-text-primary outline-none placeholder:text-text-muted"
+              disabled={isStreaming}
+            />
+            <button
+              onClick={isStreaming ? () => abortRef.current?.abort() : () => sendMessage()}
+              disabled={!isStreaming && !input.trim()}
+              title={isStreaming ? "Stop generating" : "Send (Enter)"}
+              className={"flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all " + (
+                isStreaming
+                  ? "bg-error-bg text-error hover:bg-red-900"
+                  : "bg-accent text-background hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed"
+              )}
+            >
+              {isStreaming ? (
+                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
+              )}
+            </button>
           </div>
+          <p className="mt-2 text-center text-[11px] text-text-muted">
+            TokenSaver can make mistakes. Token counts are estimates unless reported by the provider.
+          </p>
         </div>
       </div>
     </div>
   );
 }
+
+
