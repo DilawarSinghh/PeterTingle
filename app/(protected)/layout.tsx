@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Sidebar from "@/components/ui/Sidebar";
+import SidebarToggle from "@/components/ui/SidebarToggle";
 import ChatProvider from "@/components/providers/ChatProvider";
 
 export default async function ProtectedLayout({
@@ -40,6 +41,7 @@ export default async function ProtectedLayout({
               "User",
           }}
         />
+        <SidebarToggle />
         <main className="flex-1 overflow-hidden">{children}</main>
       </div>
     </ChatProvider>

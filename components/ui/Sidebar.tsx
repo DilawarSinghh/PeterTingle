@@ -13,7 +13,6 @@ interface Props {
 
 const NAV = [
   { href: "/chat",      label: "Chat",      icon: "💬" },
-  { href: "/dashboard", label: "Dashboard", icon: "📊" },
   { href: "/settings",  label: "Settings",  icon: "⚙️" },
 ];
 
@@ -33,7 +32,7 @@ export default function Sidebar({ user }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
-  const { conversationId, loadConversation, startNewChat, refreshTrigger, sidebarOpen, setSidebarOpen } = useChat();
+  const { conversationId, loadConversation, startNewChat, refreshTrigger, sidebarOpen, setSidebarOpen, toggleSidebar } = useChat();
 
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,10 +88,14 @@ export default function Sidebar({ user }: Props) {
 
       <aside className={"fixed left-0 top-0 z-50 flex h-full w-64 flex-col border-r border-surface-3 bg-surface text-sm transition-transform duration-200 sm:relative " + (sidebarOpen ? "translate-x-0" : "-translate-x-full sm:hidden")}>
         {/* Logo + New chat */}
-        <div className="flex items-center gap-2 border-b border-surface-3 px-3 py-3">
+        <button
+          onClick={toggleSidebar}
+          title="Hide sidebar"
+          className="flex w-full items-center gap-2 border-b border-surface-3 px-3 py-3 text-left transition-colors hover:bg-surface-2"
+        >
           <span className="text-xl text-accent">⛏</span>
           <span className="font-bold text-text-primary">TokenSaver</span>
-        </div>
+        </button>
 
         <div className="px-2 py-2">
           <button

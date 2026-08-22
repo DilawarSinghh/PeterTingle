@@ -53,7 +53,7 @@ const STARTER_PROMPTS = [
 export default function ChatInterface({ initialCompressionLevel, models, defaultModelId }: Props) {
   const {
     conversationId, messages, setMessages, setConversationId, isStreaming, setIsStreaming,
-    historyLoading, bumpRefresh, abortRef, toggleSidebar,
+    historyLoading, bumpRefresh, abortRef,
   } = useChat();
 
   const [input, setInput] = useState("");
@@ -200,7 +200,7 @@ export default function ChatInterface({ initialCompressionLevel, models, default
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
       {/* Header */}
-      <button onClick={toggleSidebar} className="mr-3 rounded-lg p-2 text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary sm:hidden"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></button><header className="flex h-14 shrink-0 items-center justify-between border-b border-surface-3 bg-background px-4">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-surface-3 bg-background pl-14 pr-4 sm:pl-4">
         <div className="flex items-center gap-2">
           {sessionTokensSaved > 0 && (
             <span className="savings-badge hidden sm:inline-flex">⛏ {sessionTokensSaved.toLocaleString()} saved</span>
@@ -279,7 +279,7 @@ export default function ChatInterface({ initialCompressionLevel, models, default
       </div>
 
       {/* Input */}
-      <div className="fixed bottom-0 left-0 right-0 border-t border-surface-3 bg-background/80 px-4 py-4 backdrop-blur sm:left-64">
+      <div className="shrink-0 border-t border-surface-3 bg-background/80 px-4 py-4 backdrop-blur">
         <div className="mx-auto max-w-3xl">
           <div className="relative flex items-end gap-2 rounded-2xl border border-surface-3 bg-surface px-4 py-3 shadow-sm transition-all focus-within:border-accent-muted focus-within:shadow-accent-glow">
             <textarea
