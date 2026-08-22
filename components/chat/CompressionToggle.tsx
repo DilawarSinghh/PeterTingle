@@ -27,7 +27,7 @@ export default function CompressionToggle({
     <div className="flex items-center gap-2">
       {/* Level selector */}
       {enabled && (
-        <div className="flex items-center gap-0.5 rounded-md border border-surface-3 bg-surface p-0.5">
+        <div className="hidden sm:flex items-center gap-0.5 rounded-md border border-surface-3 bg-surface p-0.5">
           {LEVELS.map((l) => (
             <button
               key={l.value}
@@ -50,7 +50,8 @@ export default function CompressionToggle({
       <button
         onClick={() => onToggle(!enabled)}
         disabled={disabled}
-        className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+        title={enabled ? "Compression on — tap to disable" : "Compression off — tap to enable"}
+        className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed sm:px-3 ${
           enabled
             ? "border-accent-muted bg-accent-dim text-accent"
             : "border-surface-3 bg-surface text-text-secondary hover:bg-surface-2"
@@ -61,7 +62,8 @@ export default function CompressionToggle({
             enabled ? "bg-accent" : "bg-text-muted"
           }`}
         />
-        {enabled ? "Compression on" : "Compression off"}
+        <span className="hidden sm:inline">{enabled ? "Compression on" : "Compression off"}</span>
+        <span className="sm:hidden">{enabled ? "On" : "Off"}</span>
       </button>
     </div>
   );

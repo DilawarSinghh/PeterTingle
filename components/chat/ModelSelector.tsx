@@ -95,7 +95,7 @@ export default function ModelSelector({ models, selectedId, onChange, disabled }
         className="flex items-center gap-2 rounded-lg border border-surface-3 bg-surface px-3 py-1.5 text-xs font-medium text-text-primary shadow-sm hover:border-accent-muted hover:bg-surface-2 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-        <span className="truncate max-w-[150px]">{selected?.display_name ?? "Select model"}</span>
+        <span className="truncate max-w-[100px] sm:max-w-[150px]">{selected?.display_name ?? "Select model"}</span>
         <svg
           className={"w-3 h-3 shrink-0 text-text-secondary transition-transform " + (open ? "rotate-180" : "")}
           fill="none" stroke="currentColor" viewBox="0 0 24 24"

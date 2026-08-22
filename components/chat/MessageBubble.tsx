@@ -11,7 +11,7 @@ export default function MessageBubble({ message }: Props) {
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div className={`max-w-[85%] sm:max-w-[75%] ${isUser ? "ml-12" : "mr-12"}`}>
+      <div className={`max-w-[92%] sm:max-w-[75%] ${isUser ? "ml-4 sm:ml-12" : "mr-4 sm:mr-12"}`}>
         {isUser && message.originalContent && message.content !== message.originalContent && (
           <p className="mb-1 text-[11px] text-accent opacity-80">✂ Input compressed</p>
         )}

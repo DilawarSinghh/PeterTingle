@@ -30,7 +30,7 @@ export default async function ProtectedLayout({
 
   return (
     <ChatProvider>
-      <div className="flex h-screen overflow-hidden bg-background">
+      <div className="flex h-dvh overflow-hidden bg-background">
         <Sidebar
           user={{
             email: user.email ?? "",

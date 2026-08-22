@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -47,7 +47,7 @@ export default function SettingsClient({ initialProfile }: Props) {
   async function handleDeleteAccount() {
     if (deleteConfirm !== "DELETE") return;
     setDeleting(true);
-    // Client SDK can't delete auth users — sign out and direct to support.
+    // Client SDK can't delete auth users â€” sign out and direct to support.
     // (A self-serve deletion endpoint requires the service role; tracked as a TODO.)
     await supabase.auth.signOut();
     router.push("/");
@@ -55,7 +55,7 @@ export default function SettingsClient({ initialProfile }: Props) {
   }
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-6 bg-background">
+    <div className="h-full overflow-y-auto bg-background px-4 pb-6 pt-14 sm:px-6 sm:pt-6">
       <div className="mx-auto max-w-2xl space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Settings</h1>
@@ -63,7 +63,7 @@ export default function SettingsClient({ initialProfile }: Props) {
         </div>
 
         {/* Profile */}
-        <section className="card p-6 space-y-5">
+        <section className="card p-4 space-y-5 sm:p-6">
           <h2 className="text-base font-semibold text-text-primary">Profile</h2>
           <form onSubmit={handleSave} className="space-y-4">
             <div>
@@ -76,13 +76,13 @@ export default function SettingsClient({ initialProfile }: Props) {
             </div>
             {error && <p className="text-sm text-error">{error}</p>}
             <button type="submit" disabled={saving} className="btn-primary">
-              {saving ? "Saving…" : saved ? "Saved ✓" : "Save changes"}
+              {saving ? "Savingâ€¦" : saved ? "Saved âœ“" : "Save changes"}
             </button>
           </form>
         </section>
 
         {/* Compression */}
-        <section className="card p-6 space-y-4">
+        <section className="card p-4 space-y-4 sm:p-6">
           <h2 className="text-base font-semibold text-text-primary">Default compression level</h2>
           <p className="text-sm text-text-secondary">Sets the default for new chat sessions. Override per-session in the chat header.</p>
           <div className="space-y-2">
@@ -111,7 +111,7 @@ export default function SettingsClient({ initialProfile }: Props) {
             ))}
           </div>
           <button onClick={handleSave} disabled={saving} className="btn-primary">
-            {saving ? "Saving…" : saved ? "Saved ✓" : "Save level"}
+            {saving ? "Savingâ€¦" : saved ? "Saved âœ“" : "Save level"}
           </button>
         </section>
 
@@ -119,7 +119,7 @@ export default function SettingsClient({ initialProfile }: Props) {
         <ApiKeysSection />
 
         {/* Danger zone */}
-        <section className="rounded-xl border border-error bg-error-bg p-6 space-y-4">
+        <section className="rounded-xl border border-error bg-error-bg p-4 space-y-4 sm:p-6">
           <h2 className="text-base font-semibold text-error">Danger zone</h2>
           <p className="text-sm text-error opacity-80">
             Deleting your account removes all conversations and usage data. This cannot be undone.
@@ -139,10 +139,11 @@ export default function SettingsClient({ initialProfile }: Props) {
             disabled={deleteConfirm !== "DELETE" || deleting}
             className="inline-flex items-center justify-center rounded-md bg-error px-4 py-2 text-sm font-medium text-background transition-colors hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {deleting ? "Deleting…" : "Delete my account"}
+            {deleting ? "Deletingâ€¦" : "Delete my account"}
           </button>
         </section>
       </div>
     </div>
   );
 }
+

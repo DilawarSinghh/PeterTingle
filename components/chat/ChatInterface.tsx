@@ -220,14 +220,14 @@ export default function ChatInterface({ initialCompressionLevel, models, default
         onScroll={handleScroll}
         className="chat-scroll flex-1 overflow-y-auto"
       >
-        <div className="mx-auto w-full max-w-3xl px-4 pb-32 pt-6">
+        <div className="mx-auto w-full max-w-3xl px-3 pb-8 pt-4 sm:px-4 sm:pt-6">
           {historyLoading ? (
             <div className="flex h-full min-h-[40vh] items-center justify-center">
               <div className="text-sm text-text-secondary">Loading messages…</div>
             </div>
           ) : messages.length === 0 ? (
             <div className="flex min-h-[50vh] flex-col items-center justify-center text-center">
-              <h1 className="text-3xl font-semibold text-text-primary">What can I help with?</h1>
+              <h1 className="text-2xl font-semibold text-text-primary sm:text-3xl">What can I help with?</h1>
               <div className="mt-8 grid w-full max-w-lg gap-3 sm:grid-cols-2">
                 {STARTER_PROMPTS.map((prompt, i) => (
                   <button
@@ -279,7 +279,7 @@ export default function ChatInterface({ initialCompressionLevel, models, default
       </div>
 
       {/* Input */}
-      <div className="shrink-0 border-t border-surface-3 bg-background/80 px-4 py-4 backdrop-blur">
+      <div className="shrink-0 border-t border-surface-3 bg-background/80 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:px-4 sm:pt-4">
         <div className="mx-auto max-w-3xl">
           <div className="relative flex items-end gap-2 rounded-2xl border border-surface-3 bg-surface px-4 py-3 shadow-sm transition-all focus-within:border-accent-muted focus-within:shadow-accent-glow">
             <textarea
