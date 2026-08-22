@@ -221,12 +221,20 @@ async function* parseAnthropicStream(body: ReadableStream<Uint8Array>): AsyncGen
 
 // ── Platform API key map ──────────────────────────────────────────────────────
 
+/** Placeholder values like "<your-openai-api-key>" must be treated as unset. */
+function validKey(key: string | undefined): string | undefined {
+  if (!key) return undefined;
+  const trimmed = key.trim();
+  if (!trimmed || trimmed.startsWith("<") || trimmed.length < 10) return undefined;
+  return trimmed;
+}
+
 const PLATFORM_KEYS: Record<string, string | undefined> = {
-  openai:     process.env.OPENAI_API_KEY,
-  anthropic:  process.env.ANTHROPIC_API_KEY,
-  groq:       process.env.GROQ_API_KEY,
-  nvidia:     process.env.NVIDIA_NIM_API_KEY,
-  openrouter: process.env.LLM_API_KEY,
+  openai:     validKey(process.env.OPENAI_API_KEY),
+  anthropic:  validKey(process.env.ANTHROPIC_API_KEY),
+  groq:       validKey(process.env.GROQ_API_KEY),
+  nvidia:     validKey(process.env.NVIDIA_NIM_API_KEY),
+  openrouter: validKey(process.env.LLM_API_KEY),
 };
 
 const PROVIDER_BASE_URLS: Record<string, string> = {
@@ -278,7 +286,20 @@ export async function POST(request: NextRequest) {
     .eq("id", effectiveModelId)
     .single();
 
-  const provider = modelRow?.provider ?? "openrouter";
+  if (!modelRow) {
+    return NextResponse.json(
+      { error: `Unknown model: ${effectiveModelId}. Pick a model from the selector.` },
+      { status: 400 }
+    );
+  }
+  if (!modelRow.is_active) {
+    return NextResponse.json(
+      { error: `Model ${effectiveModelId} is no longer available. Pick another model.` },
+      { status: 400 }
+    );
+  }
+
+  const provider = modelRow.provider ?? "openrouter";
   const baseUrl =
     modelRow?.base_url ??
     PROVIDER_BASE_URLS[provider] ??
@@ -322,7 +343,10 @@ export async function POST(request: NextRequest) {
 
   if (!apiKey) {
     return NextResponse.json(
-      { error: `No API key configured for provider: ${provider}` },
+      {
+        error: `No API key configured for ${provider}. Add one in Settings → API keys, or pick a model from a configured provider.`,
+        code: "NO_KEY",
+      },
       { status: 502 }
     );
   }

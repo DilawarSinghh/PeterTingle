@@ -47,6 +47,8 @@ export default function SettingsClient({ initialProfile }: Props) {
   async function handleDeleteAccount() {
     if (deleteConfirm !== "DELETE") return;
     setDeleting(true);
+    // Client SDK can't delete auth users — sign out and direct to support.
+    // (A self-serve deletion endpoint requires the service role; tracked as a TODO.)
     await supabase.auth.signOut();
     router.push("/");
     router.refresh();
